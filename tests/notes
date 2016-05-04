@@ -1,0 +1,11 @@
+это тестовые программы используемые для отладки kernel2minor
+
+tets-nand.c это тестовая читалка образа yaffs2 для NAND флешки. в частности для флешки rb751-го с размером страницы 2048 байт.
+test-nor.c это тестовя читалка образа yaffs2 для nor флешки rb941-2nd(hap lite). с учетом дыр в конце каждого блока
+test1-unfrag.c это конвертор из фрагментированного(с дырами - NOR flash у микротика) в безвыровый вариант. не обращай на него внимания.
+build_test.sh скрипт для сборки test-(nor or nand).c в папке /home/prog/openwrt/work/rb941-2nd-mtd-dump/yaffs2/utils
+  без параметров он просто собирает. если указать nor или nand то будет изменен target сборки на nor или nand соответственно
+
+эти програмки были написаны для анализа и отладки полученных с помощью kernel2minor образов
+собирать их нужно в папке utils yaffs2 транка вот так: gcc ./test.c -o ./test ./yaffs_packedtags2.o  ./yaffs_ecc.o ./yaffs_hweight.o
+всю работу с ними веди тут: /home/prog/openwrt/work/rb941-2nd-mtd-dump/yaffs2/utils
