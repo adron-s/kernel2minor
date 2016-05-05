@@ -20,8 +20,10 @@ Currently supported flashes are:
       OOB size:                       64 bytes
 
 You can write ready image in the following way:
+
   NOR flash:
     mtd write /tmp/openwrt-ar71xx-mikrotik-vmlinux-lzma.nor-tik-yaffs2 kernel
+
   NAND flash:
      flash_erase /dev/mtd1 0 0
      nandwrite /dev/mtd1 -o /tmp/openwrt-ar71xx-mikrotik-vmlinux-lzma.nand-tik-yaffs2-2048b-ecc
