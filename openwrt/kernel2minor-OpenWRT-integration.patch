@@ -1,20 +1,22 @@
-From 6bff425565c4cd9c2c6bf91ca5e8676199870438 Mon Sep 17 00:00:00 2001
+From 7a1020430103b14ea480e771adc1763eb1c6f91f Mon Sep 17 00:00:00 2001
 From: Sergey Sergeev <adron@yapic.net>
-Date: Thu, 5 May 2016 10:02:08 +0300
+Date: Thu, 5 May 2016 13:44:01 +0300
 Subject: [PATCH] ar71xx: add Mikrotik's yaffs2 file system support.
 
 This patch adds support of Mikrotik yaffs2 filesystem image for kernel file
 and tools/kernel2minor package.
 We neede this to boot kernel through RouterBoot on new Mikrotik NOR flash devices.
+
+Signed-off-by: Sergey Sergeev <adron@yapic.net>
 ---
- config/Config-images.in                | 31 +++++++++++++++++++++++++++++
+ config/Config-images.in                | 31 ++++++++++++++++++++++++++++++
  scripts/metadata.pl                    |  1 +
  target/Config.in                       |  3 +++
- target/linux/ar71xx/image/Makefile     | 14 +++++++++++++
+ target/linux/ar71xx/image/Makefile     | 14 ++++++++++++++
  target/linux/ar71xx/mikrotik/target.mk |  4 ++--
  tools/Makefile                         |  1 +
- tools/kernel2minor/Makefile            | 36 ++++++++++++++++++++++++++++++++++
- 7 files changed, 88 insertions(+), 2 deletions(-)
+ tools/kernel2minor/Makefile            | 35 ++++++++++++++++++++++++++++++++++
+ 7 files changed, 87 insertions(+), 2 deletions(-)
  create mode 100644 tools/kernel2minor/Makefile
 
 diff --git a/config/Config-images.in b/config/Config-images.in
@@ -143,10 +145,10 @@ index 187655e..0627ac2 100644
  tools-$(BUILD_PPL_CLOOG) += ppl cloog
 diff --git a/tools/kernel2minor/Makefile b/tools/kernel2minor/Makefile
 new file mode 100644
-index 0000000..582cdea
+index 0000000..e61ecbf
 --- /dev/null
 +++ b/tools/kernel2minor/Makefile
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,35 @@
 +#
 +# Copyright (C) 2016 adron@yapic.net
 +#
@@ -156,15 +158,14 @@ index 0000000..582cdea
 +include $(TOPDIR)/rules.mk
 +
 +PKG_NAME:=kernel2minor
-+PKG_VERSION:=0.02
++PKG_VERSION:=0.03
 +PKG_RELEASE:=1
 +
 +PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 +PKG_SOURCE_URL:=https://github.com/adron-s/kernel2minor.git
 +PKG_SOURCE_PROTO:=git
 +PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
-+#NAND flash support(erasesize=128k, unitsize=2048b)
-+PKG_SOURCE_VERSION:=d6e808f8e54da2ea1d56e8d8bd6c24fdebf6a6ab
++PKG_SOURCE_VERSION:=c52fa92855325a24fd850599d6b2d2ccf2bb9b31
 +
 +HOST_BUILD_DIR:=$(BUILD_DIR_HOST)/$(PKG_NAME)-$(PKG_VERSION)
 +
