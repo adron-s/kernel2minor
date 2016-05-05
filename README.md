@@ -18,3 +18,7 @@ Currently supported flashes are:
       Eraseblock size:                131072 bytes, 128.0 KiB
       Minimum input/output unit size: 2048 bytes
       OOB size:                       64 bytes
+
+You can write ready image in the following way:
+  NOR flash:
+    

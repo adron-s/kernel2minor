@@ -27,4 +27,4 @@ $(YAFFS2_OBJS): %.o: %.c
 	 $(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f *.o *.bin $(TARGET) $(YAFFS2_DIR)/*.o
+	rm -f *.o *.*-tik-yaffs2* $(TARGET) $(YAFFS2_DIR)/*.o
