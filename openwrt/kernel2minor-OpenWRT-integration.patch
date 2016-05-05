@@ -1,0 +1,188 @@
+From 6bff425565c4cd9c2c6bf91ca5e8676199870438 Mon Sep 17 00:00:00 2001
+From: Sergey Sergeev <adron@yapic.net>
+Date: Thu, 5 May 2016 10:02:08 +0300
+Subject: [PATCH] ar71xx: add Mikrotik's yaffs2 file system support.
+
+This patch adds support of Mikrotik yaffs2 filesystem image for kernel file
+and tools/kernel2minor package.
+We neede this to boot kernel through RouterBoot on new Mikrotik NOR flash devices.
+---
+ config/Config-images.in                | 31 +++++++++++++++++++++++++++++
+ scripts/metadata.pl                    |  1 +
+ target/Config.in                       |  3 +++
+ target/linux/ar71xx/image/Makefile     | 14 +++++++++++++
+ target/linux/ar71xx/mikrotik/target.mk |  4 ++--
+ tools/Makefile                         |  1 +
+ tools/kernel2minor/Makefile            | 36 ++++++++++++++++++++++++++++++++++
+ 7 files changed, 88 insertions(+), 2 deletions(-)
+ create mode 100644 tools/kernel2minor/Makefile
+
+diff --git a/config/Config-images.in b/config/Config-images.in
+index a60dd50..c7d1898 100644
+--- a/config/Config-images.in
++++ b/config/Config-images.in
+@@ -6,6 +6,37 @@
+ 
+ menu "Target Images"
+ 
++	menuconfig TARGET_KERNELFS_MIKROTIK_YAFFS2
++		bool "kernel2mikrotikyaffs2"
++		default y if USES_KERNEL2MIKROTIKYAFFS2
++		depends on USES_KERNEL2MIKROTIKYAFFS2
++		help
++		  Build a Mikrotik's version of Yaffs2 filesystem which contains only a single kernel file.
++		  This is necessary for boot through RouterBoot boot loader.
++
++		config TARGET_MIKROTIK_YAFFS2_NOR_FLASH_IMG
++			bool "NOR flash image"
++			depends on TARGET_KERNELFS_MIKROTIK_YAFFS2
++			default "y"
++			help
++			  Build Mikrotik's Yaffs2 filesystem image for NOR flash boards:
++			    Mikrotik rb941-2nd(hAP lite)
++			    And maby(not tested yet) all new routerboards with this strings in description:
++				Storage type	FLASH
++				Storage size	16 MB
++
++		config TARGET_MIKROTIK_YAFFS2_NAND_2048B_ECC_FLASH_IMG
++			bool "NAND flash (2048b with ECC) image"
++			depends on TARGET_KERNELFS_MIKROTIK_YAFFS2
++			default "y"
++			help
++			  Build Mikrotik's Yaffs2 filesystem image for NAND flash boards:
++			    Mikrotik rb750 and rb751
++			    And maby(not tested yet) all routerboards with NAND flash parameters like this:
++				Eraseblock size:                131072 bytes, 128.0 KiB
++				Minimum input/output unit size: 2048 bytes
++				OOB size:                       64 bytes
++
+ 	menuconfig TARGET_ROOTFS_INITRAMFS
+ 		bool "ramdisk"
+ 		default y if USES_INITRAMFS
+diff --git a/scripts/metadata.pl b/scripts/metadata.pl
+index 99fdba1..17c3176 100755
+--- a/scripts/metadata.pl
++++ b/scripts/metadata.pl
+@@ -134,6 +134,7 @@ sub target_config_features(@) {
+ 		/ext4/ and $ret .= "\tselect USES_EXT4\n";
+ 		/targz/ and $ret .= "\tselect USES_TARGZ\n";
+ 		/cpiogz/ and $ret .= "\tselect USES_CPIOGZ\n";
++		/kernel2mikrotikyaffs2/ and $ret .= "\tselect USES_KERNEL2MIKROTIKYAFFS2\n";
+ 		/ubifs/ and $ret .= "\tselect USES_UBIFS\n";
+ 		/fpu/ and $ret .= "\tselect HAS_FPU\n";
+ 		/spe_fpu/ and $ret .= "\tselect HAS_SPE_FPU\n";
+diff --git a/target/Config.in b/target/Config.in
+index 571b06e..b9e10bd 100644
+--- a/target/Config.in
++++ b/target/Config.in
+@@ -63,6 +63,9 @@ config USES_TARGZ
+ config USES_CPIOGZ
+ 	bool
+ 
++config USES_KERNEL2MIKROTIKYAFFS2
++	bool
++
+ config USES_UBIFS
+ 	bool
+ 	select NAND_SUPPORT
+diff --git a/target/linux/ar71xx/image/Makefile b/target/linux/ar71xx/image/Makefile
+index bc8a4a8..9419c5f 100644
+--- a/target/linux/ar71xx/image/Makefile
++++ b/target/linux/ar71xx/image/Makefile
+@@ -1492,6 +1492,17 @@ define MkuImageOKLI
+ endef
+ endif
+ 
++define kernel2mikrotikyaffs2
++#NOR flash
++ifneq ($(CONFIG_TARGET_MIKROTIK_YAFFS2_NOR_FLASH_IMG),)
++	$(STAGING_DIR_HOST)/bin/kernel2minor -k $(KDIR)/loader-generic.elf -r $(VMLINUX)-lzma.nor-tik-yaffs2 -s 1024 -e
++endif
++#NAND flash 2048b with ECC
++ifneq ($(CONFIG_TARGET_MIKROTIK_YAFFS2_NAND_2048B_ECC_FLASH_IMG),)
++	$(STAGING_DIR_HOST)/bin/kernel2minor -k $(KDIR)/loader-generic.elf -r $(VMLINUX)-lzma.nand-tik-yaffs2-2048b-ecc -s 2048 -c -e
++endif
++endef
++
+ # $(1): name of the 1st file.
+ # $(2): size limit of the 1st file if it is greater than 262144, or
+ #       the erase size of the flash if it is greater than zero and less
+@@ -1682,6 +1693,9 @@ define Image/BuildKernel
+ 	$(call MkuImage,gzip,,$(KDIR)/vmlinux.bin.gz,$(UIMAGE)-gzip.bin)
+ 	$(call MkuImage,lzma,,$(KDIR)/vmlinux.bin.lzma,$(UIMAGE)-lzma.bin)
+ 	cp $(KDIR)/loader-generic.elf $(VMLINUX)-lzma.elf
++ifneq ($(CONFIG_TARGET_KERNELFS_MIKROTIK_YAFFS2),)
++	$(call kernel2mikrotikyaffs2)
++endif
+ 	-mkdir -p $(KDIR_TMP)
+ 	$(call Image/Build/Profile/$(IMAGE_PROFILE),buildkernel)
+ endef
+diff --git a/target/linux/ar71xx/mikrotik/target.mk b/target/linux/ar71xx/mikrotik/target.mk
+index b2fb0df..50a2903 100644
+--- a/target/linux/ar71xx/mikrotik/target.mk
++++ b/target/linux/ar71xx/mikrotik/target.mk
+@@ -1,5 +1,5 @@
+-BOARDNAME:=Mikrotik devices with NAND flash
+-FEATURES += targz ramdisk
++BOARDNAME:=Mikrotik devices with NAND/NOR flash
++FEATURES += targz ramdisk kernel2mikrotikyaffs2
+ 
+ define Target/Description
+ 	Build firmware images for Atheros AR71xx/AR913x based Mikrotik boards.
+diff --git a/tools/Makefile b/tools/Makefile
+index 187655e..0627ac2 100644
+--- a/tools/Makefile
++++ b/tools/Makefile
+@@ -38,6 +38,7 @@ tools-$(CONFIG_TARGET_x86) += qemu
+ tools-$(CONFIG_TARGET_mxs) += elftosb sdimage
+ tools-$(CONFIG_TARGET_brcm2708)$(CONFIG_TARGET_sunxi)$(CONFIG_TARGET_mxs) += mtools dosfstools
+ tools-$(CONFIG_TARGET_ar71xx) += lzma-old squashfs
++tools-$(CONFIG_USES_KERNEL2MIKROTIKYAFFS2) += kernel2minor
+ tools-y += lzma squashfs4
+ tools-$(BUILD_B43_TOOLS) += b43-tools
+ tools-$(BUILD_PPL_CLOOG) += ppl cloog
+diff --git a/tools/kernel2minor/Makefile b/tools/kernel2minor/Makefile
+new file mode 100644
+index 0000000..582cdea
+--- /dev/null
++++ b/tools/kernel2minor/Makefile
+@@ -0,0 +1,36 @@
++#
++# Copyright (C) 2016 adron@yapic.net
++#
++# This is free software, licensed under the GNU General Public License v2.
++# See /LICENSE for more information.
++#
++include $(TOPDIR)/rules.mk
++
++PKG_NAME:=kernel2minor
++PKG_VERSION:=0.02
++PKG_RELEASE:=1
++
++PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
++PKG_SOURCE_URL:=https://github.com/adron-s/kernel2minor.git
++PKG_SOURCE_PROTO:=git
++PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
++#NAND flash support(erasesize=128k, unitsize=2048b)
++PKG_SOURCE_VERSION:=d6e808f8e54da2ea1d56e8d8bd6c24fdebf6a6ab
++
++HOST_BUILD_DIR:=$(BUILD_DIR_HOST)/$(PKG_NAME)-$(PKG_VERSION)
++
++include $(INCLUDE_DIR)/host-build.mk
++
++define Host/Compile
++	$(MAKE) -C $(HOST_BUILD_DIR)
++endef
++
++define Host/Install
++	$(INSTALL_BIN) $(HOST_BUILD_DIR)/kernel2minor $(STAGING_DIR_HOST)/bin/
++endef
++
++define Host/Clean
++	rm -f $(STAGING_DIR_HOST)/bin/kernel2minor
++endef
++
++$(eval $(call HostBuild))
+-- 
+1.9.1
+
