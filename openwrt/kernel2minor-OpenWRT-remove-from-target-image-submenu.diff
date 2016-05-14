@@ -1,14 +1,11 @@
-From 6cfcc845b11f77bf0b46cfe23a90a4f18562ee86 Mon Sep 17 00:00:00 2001
+From 525fbbd2f640124a0ad3296876a6f1832e9af487 Mon Sep 17 00:00:00 2001
 From: Sergey Sergeev <adron@yapic.net>
-Date: Sun, 15 May 2016 01:04:39 +0300
+Date: Sun, 15 May 2016 01:14:59 +0300
 Subject: [PATCH] ar71xx: tools/kernel2minor. Remove kernel2mikrotikyaffs2
  section from Target Images submenu.
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
 
-It is no longer necessary because now to get mikrotik’s yaffs2 kernel image we using
-KERNEL := … | kernel2mikor … in target/linux/ar71xx/image/Makefile -> Device/rb-… section.
+It is no longer necessary because now to get mikrotik's yaffs2 kernel image we using
+KERNEL := ... | kernel2mikor ... in target/linux/ar71xx/image/Makefile -> Device/rb-... section.
 
 Signed-off-by: Sergey Sergeev <adron@yapic.net>
 ---
