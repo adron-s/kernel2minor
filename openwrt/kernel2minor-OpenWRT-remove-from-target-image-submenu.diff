@@ -1,0 +1,95 @@
+From 6cfcc845b11f77bf0b46cfe23a90a4f18562ee86 Mon Sep 17 00:00:00 2001
+From: Sergey Sergeev <adron@yapic.net>
+Date: Sun, 15 May 2016 01:04:39 +0300
+Subject: [PATCH] ar71xx: tools/kernel2minor. Remove kernel2mikrotikyaffs2
+ section from Target Images submenu.
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+It is no longer necessary because now to get mikrotik’s yaffs2 kernel image we using
+KERNEL := … | kernel2mikor … in target/linux/ar71xx/image/Makefile -> Device/rb-… section.
+
+Signed-off-by: Sergey Sergeev <adron@yapic.net>
+---
+ config/Config-images.in            | 31 -------------------------------
+ target/linux/ar71xx/image/Makefile | 14 --------------
+ 2 files changed, 45 deletions(-)
+
+diff --git a/config/Config-images.in b/config/Config-images.in
+index c7d1898..a60dd50 100644
+--- a/config/Config-images.in
++++ b/config/Config-images.in
+@@ -6,37 +6,6 @@
+ 
+ menu "Target Images"
+ 
+-	menuconfig TARGET_KERNELFS_MIKROTIK_YAFFS2
+-		bool "kernel2mikrotikyaffs2"
+-		default y if USES_KERNEL2MIKROTIKYAFFS2
+-		depends on USES_KERNEL2MIKROTIKYAFFS2
+-		help
+-		  Build a Mikrotik's version of Yaffs2 filesystem which contains only a single kernel file.
+-		  This is necessary for boot through RouterBoot boot loader.
+-
+-		config TARGET_MIKROTIK_YAFFS2_NOR_FLASH_IMG
+-			bool "NOR flash image"
+-			depends on TARGET_KERNELFS_MIKROTIK_YAFFS2
+-			default "y"
+-			help
+-			  Build Mikrotik's Yaffs2 filesystem image for NOR flash boards:
+-			    Mikrotik rb941-2nd(hAP lite)
+-			    And maby(not tested yet) all new routerboards with this strings in description:
+-				Storage type	FLASH
+-				Storage size	16 MB
+-
+-		config TARGET_MIKROTIK_YAFFS2_NAND_2048B_ECC_FLASH_IMG
+-			bool "NAND flash (2048b with ECC) image"
+-			depends on TARGET_KERNELFS_MIKROTIK_YAFFS2
+-			default "y"
+-			help
+-			  Build Mikrotik's Yaffs2 filesystem image for NAND flash boards:
+-			    Mikrotik rb750 and rb751
+-			    And maby(not tested yet) all routerboards with NAND flash parameters like this:
+-				Eraseblock size:                131072 bytes, 128.0 KiB
+-				Minimum input/output unit size: 2048 bytes
+-				OOB size:                       64 bytes
+-
+ 	menuconfig TARGET_ROOTFS_INITRAMFS
+ 		bool "ramdisk"
+ 		default y if USES_INITRAMFS
+diff --git a/target/linux/ar71xx/image/Makefile b/target/linux/ar71xx/image/Makefile
+index 9fae043..20a0f7e 100644
+--- a/target/linux/ar71xx/image/Makefile
++++ b/target/linux/ar71xx/image/Makefile
+@@ -1492,17 +1492,6 @@ define MkuImageOKLI
+ endef
+ endif
+ 
+-define kernel2mikrotikyaffs2
+-#NOR flash
+-ifneq ($(CONFIG_TARGET_MIKROTIK_YAFFS2_NOR_FLASH_IMG),)
+-	$(STAGING_DIR_HOST)/bin/kernel2minor -k $(KDIR)/loader-generic.elf -r $(VMLINUX)-lzma.nor-tik-yaffs2 -s 1024 -e
+-endif
+-#NAND flash 2048b with ECC
+-ifneq ($(CONFIG_TARGET_MIKROTIK_YAFFS2_NAND_2048B_ECC_FLASH_IMG),)
+-	$(STAGING_DIR_HOST)/bin/kernel2minor -k $(KDIR)/loader-generic.elf -r $(VMLINUX)-lzma.nand-tik-yaffs2-2048b-ecc -s 2048 -c -e
+-endif
+-endef
+-
+ # $(1): name of the 1st file.
+ # $(2): size limit of the 1st file if it is greater than 262144, or
+ #       the erase size of the flash if it is greater than zero and less
+@@ -1693,9 +1682,6 @@ define Image/BuildKernel
+ 	$(call MkuImage,gzip,,$(KDIR)/vmlinux.bin.gz,$(UIMAGE)-gzip.bin)
+ 	$(call MkuImage,lzma,,$(KDIR)/vmlinux.bin.lzma,$(UIMAGE)-lzma.bin)
+ 	cp $(KDIR)/loader-generic.elf $(VMLINUX)-lzma.elf
+-ifneq ($(CONFIG_TARGET_KERNELFS_MIKROTIK_YAFFS2),)
+-	$(call kernel2mikrotikyaffs2)
+-endif
+ 	-mkdir -p $(KDIR_TMP)
+ 	$(call Image/Build/Profile/$(IMAGE_PROFILE),buildkernel)
+ endef
+-- 
+1.9.1
+
