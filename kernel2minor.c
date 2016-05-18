@@ -327,6 +327,7 @@ void do_pack(int k, int r){
   }
   //заполним инфо блок
   if(add_image_info_block){
+    add_ib_var(INFO_BLOCK_SIZE); //размер info блока
     add_ib_var(total_wrbc); //полный размер образа(без учета info блока)
     add_ib_var(block_size); //размер блока
     add_ib_var(chunk_data_size); //размер области полезных данных в чанке
