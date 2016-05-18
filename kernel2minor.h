@@ -1,7 +1,7 @@
 #ifndef __KERNEL2MINOR_H__
 #define __KERNEL2MINOR_H__
 
-#define PROGRAM_VERSION "0.05"
+#define PROGRAM_VERSION "0.06"
 
 //печать сообщения только в случае активности флага verbose
 #define verb_printf(args...) ({ if(verbose) printf(args); })
@@ -44,9 +44,17 @@
   b = tmp;           \
 }
 
-//безопасное добавление инфо переменной в info_block
-#define add_ib_var(val)                                                \
-  if((void*)ib_ptr < (void*)info_block_buf + sizeof(info_block_buf))   \
-    *(ib_ptr++) = val;
+//функции для безопасного добавления инфо переменной в info_block
+#define define_ib_vars()                                                         \
+  char *ib_ptr = (void*)info_block_buf;                                          \
+  char ib_var_tmp_buf[INFO_BLOCK_VAR_LEN + 1];
+#define __add_ib_var(val, maxlen)                                                \
+  snprintf(ib_var_tmp_buf, sizeof(ib_var_tmp_buf), "%0"#maxlen"x", val);         \
+  if((void*)ib_ptr + maxlen <= (void*)info_block_buf + sizeof(info_block_buf)){  \
+    memcpy(ib_ptr, ib_var_tmp_buf, maxlen);                                      \
+    ib_ptr += maxlen;                                                            \
+  }
+#define _add_ib_var(val, maxlen) __add_ib_var(val, maxlen);
+#define add_ib_var(val) _add_ib_var(val, INFO_BLOCK_VAR_LEN);
 
 #endif /* __KERNEL2MINOR_H__ */
