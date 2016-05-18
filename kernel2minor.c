@@ -25,8 +25,8 @@
 #include "kernel2minor.h"
 #include "nand_ecclayout.h"
 
-//размер блока с инфо данными о созданном образе
-#define INFO_BLOCK_SIZE 256
+//размер блока с инфо данными о созданном образе. рассчитывается в calc_needed_vars
+static int info_block_size = 0;
 //длина строки переменной инфо блока(без '\0'. он там не используется)
 #define INFO_BLOCK_VAR_LEN 8
 //имя файла ядра в файловой система yaffs2
@@ -39,7 +39,7 @@
 /* размер блока данных по которому считается ECC. для yaffs2 это 256 */
 #define ECC_BLOCK_SIZE 256
 
-char info_block_buf[INFO_BLOCK_SIZE];
+char *info_block_buf = NULL;
 char kernel_file[255];
 char res_file[255];
 struct stat kernel_file_stats;
@@ -65,14 +65,16 @@ static int chunks_per_block = 0;
 void print_help(void){
   int a;
   char chunk_size_str[10];
+  char info_block_size_str[30];
   snprintf(chunk_size_str, sizeof(chunk_size_str) - 1, "%u", chunk_size);
+  snprintf(info_block_size_str, sizeof(info_block_size_str) - 1, "Yes (align size := %u)", info_block_size);
   char *usage[] =
     { "-k", "Path to kernel file", kernel_file,
       "-r", "Path to result file", res_file,
       "-e", "Enable endians convert", endians_need_conv ? "Yes" : "No",
       "-c", "Use ECC", use_ecc ? "Yes" : "No",
       "-s", "FLASH Unit(Chunk) size", chunk_size_str,
-      "-i", "Add image info block", add_image_info_block ? "Yes" : "No",
+      "-i", "Add image info block", add_image_info_block ? info_block_size_str : "No",
       "-v", "Verbose output", verbose ? "Yes" : "No",
       "-h", "Show help and exit", "" };
   printf("Version := %s\nUsage:\n", PROGRAM_VERSION);
@@ -251,8 +253,8 @@ void do_pack(int k, int r){
   memset(hole_fill_buf, 0xff, hole_fill_buf_size);
   //инит инфо блока и резервирование под него места в начале файла образа
   if(add_image_info_block){
-    memset(info_block_buf, 0x0, sizeof(info_block_buf));
-    if(write(r, info_block_buf, sizeof(info_block_buf)) != sizeof(info_block_buf)){
+    memset(info_block_buf, 0x0, info_block_size);
+    if(write(r, info_block_buf, info_block_size) != info_block_size){
       perror("Can't write info_block place holder to result file! error descr");
       goto end;
     }
@@ -327,9 +329,10 @@ void do_pack(int k, int r){
   }
   //заполним инфо блок
   if(add_image_info_block){
-    add_ib_var(INFO_BLOCK_SIZE); //размер info блока
+    add_ib_var(info_block_size); //размер info блока
     add_ib_var(total_wrbc); //полный размер образа(без учета info блока)
-    add_ib_var(block_size); //размер блока
+    add_ib_var(block_size); //размер блока yaffs2. он же кратен размеру образа
+    add_ib_var(total_wrbc / block_size); //размер образа в блоках
     add_ib_var(chunk_data_size); //размер области полезных данных в чанке
     add_ib_var(chunk_oob_size); //размиер области oob в чанке
     add_ib_var(chunk_full_size); //общий размер чанки(равен сумме двух предидущих полей)
@@ -378,6 +381,13 @@ void calc_needed_vars(void){
   }
   //кол-во чанок в блоке
   chunks_per_block = block_size / chunk_full_size;
+  /* размер info блока. он равен размеру блока yaffs2 и за вычетом переданного нам в параметрах align_size. align_size нужен для
+     openwrt-шного скрипта sysupgrade чтобы указать dd смещение в блоках(размера block_size) от начала sysupgrade.bin */
+  if(add_image_info_block){
+    info_block_size = block_size - info_block_size;
+  }else{
+    info_block_size = 0;
+  }
   //выведем то что мы посчитали
   verb_printf("YAFFS2 parameters vars:\n");
   verb_printf("  chunk_data_size := %u\n", chunk_data_size);
@@ -394,14 +404,14 @@ int main(int argc, char *argv[]){
   int r;
   int ch; //для парсинга параметров
   //загружаем параметры командной строки
-  while( (ch = getopt(argc, argv, "k:r:s:icevh")) != -1){
+  while( (ch = getopt(argc, argv, "k:r:s:i:cevh")) != -1){
     switch(ch){
       case 'k': snprintf(kernel_file, sizeof(kernel_file) - 1, "%s", optarg); break;
       case 'r': snprintf(res_file, sizeof(res_file) - 1, "%s", optarg); break;
       case 'c': use_ecc = 1; break;
       case 'e': endians_need_conv = 1; break;
       case 's': chunk_size = atoi(optarg); break;
-      case 'i': add_image_info_block = 1; break;
+      case 'i': add_image_info_block = 1; info_block_size = atoi(optarg); break;
       case 'v': verbose = 1; break;
       case 'h': print_help(); exit(0); break;
     }
@@ -420,7 +430,6 @@ int main(int argc, char *argv[]){
   ecc_layout = get_ecclayout_by_chunk_size(use_ecc ? chunk_size : 0);
   //рассчитаем нужные для работы переменные(block_size, chunk_data_size, chunk_full_size, etc...)
   calc_needed_vars();
-
   k = open(kernel_file, O_RDONLY);
   if(k <= 0){
     perror("Can't open kernel file");
@@ -432,18 +441,29 @@ int main(int argc, char *argv[]){
     close(k);
     exit(-1);
   }
+  //выделим память для info_block-а
+  if(add_image_info_block && info_block_size > 0){
+    info_block_buf = malloc(info_block_size);
+    if(!info_block_buf){
+      perror("Can't malloc memory for info_block_buf");
+      goto end;
+    }
+  }
   do_pack(k, r);
   //запишем инфо блок
   if(add_image_info_block){
     //переходим к началу info блока(он уже заранее был проинициализирован pначениями 0x0)
     if(lseek(r, 0, SEEK_SET) == 0){
-      if(write(r, info_block_buf, sizeof(info_block_buf)) != sizeof(info_block_buf))
+      if(write(r, info_block_buf, info_block_size) != info_block_size)
         perror("Can't write info_block place holder to result file! error descr");
     }else{
       perror("Can't seek to begin of result file");
     }
-    printf("Info block write done(0..%zu bytes) from begin\n", sizeof(info_block_buf) - 1);
+    printf("Info block write done(0..%u) from begin\n", info_block_size - 1);
   }
+end:
+  if(info_block_buf)
+    free(info_block_buf);
   close(k);
   close(r);
   return 0;
