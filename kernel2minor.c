@@ -73,7 +73,7 @@ void print_help(void){
       "-i", "Add image info block", add_image_info_block ? "Yes" : "No",
       "-v", "Verbose output", verbose ? "Yes" : "No",
       "-h", "Show help and exit", "" };
-  printf("Usage:\n");
+  printf("Version := %s\nUsage:\n", PROGRAM_VERSION);
   for(a = 0; a < sizeof(usage) / sizeof(usage[0]); a += 3){
     printf("  %-5s%-25s%s\n", usage[a], usage[a + 1], usage[a + 2]);
   }

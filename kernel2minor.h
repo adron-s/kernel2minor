@@ -1,6 +1,8 @@
 #ifndef __KERNEL2MINOR_H__
 #define __KERNEL2MINOR_H__
 
+#define PROGRAM_VERSION "0.05"
+
 //печать сообщения только в случае активности флага verbose
 #define verb_printf(args...) ({ if(verbose) printf(args); })
 
