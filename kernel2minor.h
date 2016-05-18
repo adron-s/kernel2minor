@@ -42,5 +42,9 @@
   b = tmp;           \
 }
 
+//безопасное добавление инфо переменной в info_block
+#define add_ib_var(val)                                                \
+  if((void*)ib_ptr < (void*)info_block_buf + sizeof(info_block_buf))   \
+    *(ib_ptr++) = val;
 
 #endif /* __KERNEL2MINOR_H__ */

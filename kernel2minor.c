@@ -25,6 +25,8 @@
 #include "kernel2minor.h"
 #include "nand_ecclayout.h"
 
+//размер блока с инфо данными о созданном образе
+#define INFO_BLOCK_SIZE 256
 //имя файла ядра в файловой система yaffs2
 #define KERNEl_YAFFS_FILE_NAME "kernel"
 /* сколько чанок в одном блоке. обычно 64! для NOR меньше!
@@ -35,6 +37,7 @@
 /* размер блока данных по которому считается ECC. для yaffs2 это 256 */
 #define ECC_BLOCK_SIZE 256
 
+char info_block_buf[INFO_BLOCK_SIZE];
 char kernel_file[255];
 char res_file[255];
 struct stat kernel_file_stats;
@@ -45,6 +48,8 @@ int endians_need_conv = 0; //нужна ли конвертация порядк
 int chunk_size = 1024; //по умолчанию == размеру для NOR флешки
 int use_ecc = 0; //используется ли ECC
 int verbose = 0; //говорливость в stdout
+//добавить к образу блок с данными описывающими его параметры(размер, blocksize, chunksize, etc...)
+int add_image_info_block = 0; //это нужно для образов используемых перепрошивальщиком openwrt(для nand флешей)
 
 //параметры для создаваемой нами файловой системы yaffs2. рассчитываются ф-ей calc_needed_vars.
 static int chunk_data_size = 0;
@@ -65,6 +70,7 @@ void print_help(void){
       "-e", "Enable endians convert", endians_need_conv ? "Yes" : "No",
       "-c", "Use ECC", use_ecc ? "Yes" : "No",
       "-s", "FLASH Unit(Chunk) size", chunk_size_str,
+      "-i", "Add image info block", add_image_info_block ? "Yes" : "No",
       "-v", "Verbose output", verbose ? "Yes" : "No",
       "-h", "Show help and exit", "" };
   printf("Usage:\n");
@@ -231,6 +237,7 @@ void do_pack(int k, int r){
   int n = 0; //для подсчета сколько чанков было всего записано(заполнители дыр сюда не входят!)
   int bc = 0; //для подсчета сколько блоков было записано
   int total_wrbc = 0; //для подсчета сколько всего было записано байт
+  u_int64_t *ib_ptr = (void*)info_block_buf;
   //выделим память для буферов
   if((buf = malloc(buf_size)))
     hole_fill_buf = malloc(hole_fill_buf_size);
@@ -240,7 +247,14 @@ void do_pack(int k, int r){
   }
   //заполним буфер для дыр
   memset(hole_fill_buf, 0xff, hole_fill_buf_size);
-
+  //инит инфо блока и резервирование под него места в начале файла образа
+  if(add_image_info_block){
+    memset(info_block_buf, 0x0, sizeof(info_block_buf));
+    if(write(r, info_block_buf, sizeof(info_block_buf)) != sizeof(info_block_buf)){
+      perror("Can't write info_block place holder to result file! error descr");
+      goto end;
+    }
+  }
   //заполним заголовочную чанку и запишем ее в r
   wrlen = fill_and_write_obj_header(r, obj_id, seq_number, buf, buf_size, &n);
   total_wrbc += wrlen; //считаем сколько всего байт мы записали
@@ -262,6 +276,7 @@ void do_pack(int k, int r){
           goto end;
         }
       }else{
+        wrlen = 0; //мы же ничего не записали! нужно обнулить иначе total_wrbc неверно посчитается!
         verb_printf("Perfect block - no hole in the tail\n");
       }
       //начнем использование нового блока
@@ -307,6 +322,15 @@ void do_pack(int k, int r){
   //последняя проверка. вдруг гдето ошиблись.
   if(total_wrbc % block_size != 0 && total_wrbc / block_size != bc){
     printf("Warning! Something went wrong!\n");
+  }
+  //заполним инфо блок
+  if(add_image_info_block){
+    add_ib_var(total_wrbc); //полный размер образа(без учета info блока)
+    add_ib_var(block_size); //размер блока
+    add_ib_var(chunk_data_size); //размер области полезных данных в чанке
+    add_ib_var(chunk_oob_size); //размиер области oob в чанке
+    add_ib_var(chunk_full_size); //общий размер чанки(равен сумме двух предидущих полей)
+    add_ib_var(chunks_per_block); //сколько чанок вмещает один блок
   }
   //выведем статистику по проделанной работе.
   printf("Successfully writed %u blocks and %u bytes\n", bc, total_wrbc);
@@ -367,13 +391,14 @@ int main(int argc, char *argv[]){
   int r;
   int ch; //для парсинга параметров
   //загружаем параметры командной строки
-  while( (ch = getopt(argc, argv, "k:r:s:cevh")) != -1){
+  while( (ch = getopt(argc, argv, "k:r:s:icevh")) != -1){
     switch(ch){
       case 'k': snprintf(kernel_file, sizeof(kernel_file) - 1, "%s", optarg); break;
       case 'r': snprintf(res_file, sizeof(res_file) - 1, "%s", optarg); break;
       case 'c': use_ecc = 1; break;
       case 'e': endians_need_conv = 1; break;
       case 's': chunk_size = atoi(optarg); break;
+      case 'i': add_image_info_block = 1; break;
       case 'v': verbose = 1; break;
       case 'h': print_help(); exit(0); break;
     }
@@ -405,6 +430,17 @@ int main(int argc, char *argv[]){
     exit(-1);
   }
   do_pack(k, r);
+  //запишем инфо блок
+  if(add_image_info_block){
+    //переходим к началу info блока(он уже заранее был проинициализирован pначениями 0x0)
+    if(lseek(r, 0, SEEK_SET) == 0){
+      if(write(r, info_block_buf, sizeof(info_block_buf)) != sizeof(info_block_buf))
+        perror("Can't write info_block place holder to result file! error descr");
+    }else{
+      perror("Can't seek to begin of result file");
+    }
+    printf("Info block write done(0..%zu bytes) from begin\n", sizeof(info_block_buf) - 1);
+  }
   close(k);
   close(r);
   return 0;
