@@ -145,7 +145,7 @@ index 187655e..0627ac2 100644
  tools-$(BUILD_PPL_CLOOG) += ppl cloog
 diff --git a/tools/kernel2minor/Makefile b/tools/kernel2minor/Makefile
 new file mode 100644
-index 0000000..77e282b
+index 0000000..805cfe9
 --- /dev/null
 +++ b/tools/kernel2minor/Makefile
 @@ -0,0 +1,35 @@
@@ -158,14 +158,14 @@ index 0000000..77e282b
 +include $(TOPDIR)/rules.mk
 +
 +PKG_NAME:=kernel2minor
-+PKG_VERSION:=0.04
++PKG_VERSION:=0.05
 +PKG_RELEASE:=1
 +
 +PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
 +PKG_SOURCE_URL:=https://github.com/adron-s/kernel2minor.git
 +PKG_SOURCE_PROTO:=git
 +PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
-+PKG_SOURCE_VERSION:=37811c0477d826668648234c5c68725e96a11513
++PKG_SOURCE_VERSION:=7abac6b1a0aa5a4f24ee98e2e86d0012e32f7e25
 +
 +HOST_BUILD_DIR:=$(BUILD_DIR_HOST)/$(PKG_NAME)-$(PKG_VERSION)
 +
