@@ -329,6 +329,8 @@ void do_pack(int k, int r){
   }
   //заполним инфо блок
   if(add_image_info_block){
+    strncpy(ib_var_tmp_buf, "MIKROTIK", sizeof(ib_var_tmp_buf));
+    add_ib_var(0, 1); //слово MIKROTIK как флаг обозначающий что это инфоблок порожденный этой программой
     add_ib_var(info_block_size); //размер info блока
     add_ib_var(total_wrbc); //полный размер образа(без учета info блока)
     add_ib_var(block_size); //размер блока yaffs2. он же кратен размеру образа
