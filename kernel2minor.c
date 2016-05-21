@@ -44,6 +44,8 @@ char kernel_file[255];
 char res_file[255];
 struct stat kernel_file_stats;
 nand_ecclayout_t ecc_layout;
+//имя платформы. параметр -p. для инфо блока.
+char platform_name[INFO_BLOCK_VAR_LEN + 1];
 
 //значения по умолчанию для наших параметров
 int endians_need_conv = 0; //нужна ли конвертация порядка байт
@@ -66,8 +68,10 @@ void print_help(void){
   int a;
   char chunk_size_str[10];
   char info_block_size_str[30];
+  char platform_name_str[sizeof(platform_name) + 10] = "UNDEFINED";
   snprintf(chunk_size_str, sizeof(chunk_size_str) - 1, "%u", chunk_size);
   snprintf(info_block_size_str, sizeof(info_block_size_str) - 1, "Yes (align size := %u)", info_block_size);
+  if(platform_name[0]) snprintf(platform_name_str, sizeof(platform_name_str) - 1, "%s", platform_name);
   char *usage[] =
     { "-k", "Path to kernel file", kernel_file,
       "-r", "Path to result file", res_file,
@@ -75,6 +79,7 @@ void print_help(void){
       "-c", "Use ECC", use_ecc ? "Yes" : "No",
       "-s", "FLASH Unit(Chunk) size", chunk_size_str,
       "-i", "Add image info block", add_image_info_block ? info_block_size_str : "No",
+      "-p", "Platform name", platform_name_str,
       "-v", "Verbose output", verbose ? "Yes" : "No",
       "-h", "Show help and exit", "" };
   printf("Version := %s\nUsage:\n", PROGRAM_VERSION);
@@ -329,8 +334,12 @@ void do_pack(int k, int r){
   }
   //заполним инфо блок
   if(add_image_info_block){
+    //magic. чтобы отличать наш образ от других!
     strncpy(ib_var_tmp_buf, "MIKROTIK", sizeof(ib_var_tmp_buf));
     add_ib_var(0, 1); //слово MIKROTIK как флаг обозначающий что это инфоблок порожденный этой программой
+    //имя платформы: NOR, NAND, etc...
+    strncpy(ib_var_tmp_buf, platform_name, sizeof(ib_var_tmp_buf));
+    add_ib_var(0, 1);
     add_ib_var(info_block_size); //размер info блока
     add_ib_var(total_wrbc); //полный размер образа(без учета info блока)
     add_ib_var(block_size); //размер блока yaffs2. он же кратен размеру образа
@@ -355,7 +364,7 @@ end:
 //************************************************************************************
 /* рассчитывает нужные для работы переменные
    (block_size, chunk_data_size, chunk_full_size, etc...) */
-void calc_needed_vars(void){
+int calc_needed_vars(void){
   int raw_block_size = 0;
   /* размер области полезных данных чанки но без oob */
   chunk_data_size = chunk_size;
@@ -387,6 +396,12 @@ void calc_needed_vars(void){
      openwrt-шного скрипта sysupgrade чтобы указать dd смещение в блоках(размера block_size) от начала sysupgrade.bin */
   if(add_image_info_block){
     info_block_size = block_size - info_block_size;
+    //случа когда значение выравнивания превышает размер нашего блока(это ошибка пользователя! такого не должно быть!)
+    if(info_block_size < 0 || info_block_size < 1024){
+      fprintf(stderr, "WARNING: info_block align value is out of range. Must be %d..%d\n", 0, block_size - 1024);
+      info_block_size = 0;
+      return 1;
+    }
   }else{
     info_block_size = 0;
   }
@@ -398,15 +413,16 @@ void calc_needed_vars(void){
   verb_printf("  block_size := %u(%u + %u)\n", block_size, raw_block_size, block_size - raw_block_size);
   verb_printf("  chunks_per_block := %u\n", chunks_per_block);
   verb_printf("\n");
+  return 0;
 }//-----------------------------------------------------------------------------------
 
 //************************************************************************************
 int main(int argc, char *argv[]){
-  int k;
-  int r;
+  int k = 0;
+  int r = 0;
   int ch; //для парсинга параметров
   //загружаем параметры командной строки
-  while( (ch = getopt(argc, argv, "k:r:s:i:cevh")) != -1){
+  while( (ch = getopt(argc, argv, "k:r:s:i:p:cevh")) != -1){
     switch(ch){
       case 'k': snprintf(kernel_file, sizeof(kernel_file) - 1, "%s", optarg); break;
       case 'r': snprintf(res_file, sizeof(res_file) - 1, "%s", optarg); break;
@@ -414,6 +430,7 @@ int main(int argc, char *argv[]){
       case 'e': endians_need_conv = 1; break;
       case 's': chunk_size = atoi(optarg); break;
       case 'i': add_image_info_block = 1; info_block_size = atoi(optarg); break;
+      case 'p': strncpy(platform_name, optarg, sizeof(platform_name)); break;
       case 'v': verbose = 1; break;
       case 'h': print_help(); exit(0); break;
     }
@@ -431,7 +448,7 @@ int main(int argc, char *argv[]){
      если флаг use_ecc не установлен то вернет структуру - заглушку. */
   ecc_layout = get_ecclayout_by_chunk_size(use_ecc ? chunk_size : 0);
   //рассчитаем нужные для работы переменные(block_size, chunk_data_size, chunk_full_size, etc...)
-  calc_needed_vars();
+  if(calc_needed_vars()) goto end;
   k = open(kernel_file, O_RDONLY);
   if(k <= 0){
     perror("Can't open kernel file");
