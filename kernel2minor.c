@@ -554,9 +554,11 @@ int calc_needed_vars(void){
      openwrt-шного скрипта sysupgrade чтобы указать dd смещение в блоках(размера block_size) от начала sysupgrade.bin */
   if(add_image_info_block){
     info_block_size = block_size - info_block_size;
+    if(info_block_size < 0) info_block_size  *= -1;
     //случа когда значение выравнивания превышает размер нашего блока(это ошибка пользователя! такого не должно быть!)
     if(info_block_size < 0 || info_block_size < 1024){
-      fprintf(stderr, "WARNING: info_block align value is out of range. Must be %d..%d\n", 0, block_size - 1024);
+      fprintf(stderr, "WARNING: info_block align value(%d) is out of range. Must be %d..%d.\n", 
+              info_block_size, 0, block_size - 1024);
       info_block_size = 0;
       return 1;
     }
