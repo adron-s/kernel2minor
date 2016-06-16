@@ -114,10 +114,7 @@ int main(void){
   //total_chunks = total_size / NOR_PAGE_SIZE(total_bytes_per_chunk);
   printf("I read %d bytes from data file! total_chunks = %d\n", total_size, total_chunks);
   //данные загрузили. работаем.
-//  total_chunks = 7874;
-//  total_chunks = 189;
   for(chunkInNAND = 0; chunkInNAND < total_chunks; chunkInNAND++){
-    //chunkInNAND = 202;
     addr = chunkToAddr(chunkInNAND);
     chunk = data + addr;
     pt = (void*)(chunk + total_bytes_per_chunk);
@@ -135,7 +132,6 @@ int main(void){
     if(t.extra_available){
       print_extra(&t);
     }
-    //printf("0x%x: ", addr); for(a = 0; a < 16; a++){ printf("%3x", x[a] & 0xFF); } printf("\n");
   }
 end:
   free(data);

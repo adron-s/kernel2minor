@@ -20,10 +20,15 @@
 все нужные файлы yaffs2 бери из его транка из папки utils! там есть различия.
 часть файлов нужно брать из direct папки. в папке utils это видно по симлинкам! */
 #include "yaffs2/yaffs_guts.h"
+#include "yaffs2/yaffs_packedtags1.h"
 #include "yaffs2/yaffs_packedtags2.h"
+#include "yaffs2/yaffs_tagscompat.h"
 
 #include "kernel2minor.h"
+#include "k2m_biops.h"
 #include "nand_ecclayout.h"
+
+//#include "tests/dumpers.h"
 
 //размер блока с инфо данными о созданном образе. рассчитывается в calc_needed_vars
 static int info_block_size = 0;
@@ -31,11 +36,6 @@ static int info_block_size = 0;
 #define INFO_BLOCK_VAR_LEN 8
 //имя файла ядра в файловой система yaffs2
 #define KERNEl_YAFFS_FILE_NAME "kernel"
-/* сколько чанок в одном блоке. обычно 64! для NOR меньше!
-   используй только для рассчетов в calc_needed_vars!
-   реальное значение кол-ва чанок в блоке содержится в
-   переменной chunks_per_block ! */
-#define CHUNKS_PER_BLOCK 64
 /* размер блока данных по которому считается ECC. для yaffs2 это 256 */
 #define ECC_BLOCK_SIZE 256
 
@@ -48,9 +48,8 @@ nand_ecclayout_t ecc_layout;
 char platform_name[INFO_BLOCK_VAR_LEN + 1];
 
 //значения по умолчанию для наших параметров
-int endians_need_conv = 0; //нужна ли конвертация порядка байт
 int chunk_size = 1024; //по умолчанию == размеру для NOR флешки
-int use_ecc = 0; //используется ли ECC
+int use_ecc = 0; //используется ли ECC(если нет ecc то нет и oob_layout-а и tags пишутся линейно сразу после data)
 int verbose = 0; //говорливость в stdout
 //добавить к образу блок с данными описывающими его параметры(размер, blocksize, chunksize, etc...)
 int add_image_info_block = 0; //это нужно для образов используемых перепрошивальщиком openwrt(для nand флешей)
@@ -58,10 +57,11 @@ int add_image_info_block = 0; //это нужно для образов испо
 //параметры для создаваемой нами файловой системы yaffs2. рассчитываются ф-ей calc_needed_vars.
 static int chunk_data_size = 0;
 static int chunk_full_size = 0;
-static int chunk_oob_size = 0;
-static int chunk_tags_offset = 0;
+static int chunk_oob_total_size = 0; //общий размер oob(data ecc + !ДЫРЫ! + oobfree )
+static int chunk_oob_free_size = 0; //размер oobfree в oob(место для tags)
 static int block_size = 0;
 static int chunks_per_block = 0;
+static int yaffs_version = 2;
 
 //************************************************************************************
 void print_help(void){
@@ -75,7 +75,7 @@ void print_help(void){
   char *usage[] =
     { "-k", "Path to kernel file", kernel_file,
       "-r", "Path to result file", res_file,
-      "-e", "Enable endians convert", endians_need_conv ? "Yes" : "No",
+      "-e", "Enable endian convert", endian_need_conv ? "Yes" : "No",
       "-c", "Use ECC", use_ecc ? "Yes" : "No",
       "-s", "FLASH Unit(Chunk) size", chunk_size_str,
       "-i", "Add image info block", add_image_info_block ? info_block_size_str : "No",
@@ -89,8 +89,8 @@ void print_help(void){
 }//-----------------------------------------------------------------------------------
 
 //************************************************************************************
-/* выполняет конвертирование(если нужно) порядка байт для полей структуры pt */
-void convert_endians(struct yaffs_packed_tags2 *pt, int for_tags_ecc){
+/* выполняет конвертирование(если нужно) порядка байт для полей структуры packed_tags2 */
+void convert_endian_v2(struct yaffs_packed_tags2 *pt, int for_tags_ecc){
   if(for_tags_ecc){
     swap(pt->ecc.col_parity);
     swap(pt->ecc.line_parity);
@@ -104,56 +104,152 @@ void convert_endians(struct yaffs_packed_tags2 *pt, int for_tags_ecc){
 }//-----------------------------------------------------------------------------------
 
 //************************************************************************************
+/* выполняет конвертирование(если нужно) порядка байт для полей структуры packed_tags1
+   смотри yaffs_packedtags1.c для понимания какие поля используются */
+void convert_endian_v1(struct yaffs_packed_tags1 *pt){
+  struct yaffs_packed_tags1 res;
+  memset(&res, 0xFF, sizeof(res));
+  set_be_bfv(res, chunk_id, pt->chunk_id);
+  set_be_bfv(res, serial_number, pt->serial_number);
+  set_be_bfv(res, n_bytes, pt->n_bytes);
+  set_be_bfv(res, obj_id, pt->obj_id);
+  set_be_bfv(res, ecc, pt->ecc);
+  set_be_bfv(res, deleted, pt->deleted);
+  memcpy((void *)pt, &res, sizeof(res));
+}//-----------------------------------------------------------------------------------
+
+//************************************************************************************
 /* считает ECC для блока данных. oob_offset это смещение в buf с которого
-   начинается oob. оно идет сразу после области данных. */
-void calc_ecc_for_data(char *buf, unsigned int buf_size, unsigned int oob_offset){
-  int data_len = chunk_data_size;
-  unsigned char *data = (void *)buf;
-  unsigned char *res_ecc;
+   начинается oob. оно идет сразу после области данных.
+   !!! не делай тут assert !!! просто возвращай -1 !!! */
+int calc_ecc_for_data(unsigned char *data, int data_len, unsigned char *res_buf, int res_buf_size){
+  unsigned char *res_ecc = res_buf;
   unsigned char ecc_buf[3]; //3 байта на каждый блок
-  int a, e;
+  int a;
+  //если data не передан то нас просто спрашивают про размер res_buf
+  if(res_buf == NULL || data == NULL)
+    return data_len / ECC_BLOCK_SIZE * sizeof(ecc_buf);
   //защита от дурака. мы дальше в коде полагаемся на то, что эти значения именно такие!
-  assert(buf_size - oob_offset == chunk_oob_size);
-  assert(buf_size - chunk_oob_size == chunk_data_size);
+  if(!(res_buf_size == ecc_layout.eccbytes)) return -1;
   //оно должно быть одинаково (смотри ниже описание !) иначе вылетим хер знает куда в памяти !
-  assert(data_len / ECC_BLOCK_SIZE == ecc_layout.eccbytes / 3);
+  if(!(data_len / ECC_BLOCK_SIZE * 3 == res_buf_size)) return -1;
   for(a = 0; a < data_len / ECC_BLOCK_SIZE; a++){
     //считаем блоками по 256 байт! на выходе три байта ecc
     yaffs_ecc_calc(data + a * ECC_BLOCK_SIZE, ecc_buf);
     //нужно переставить первые два байта для систем с порядком байт отличным от нашей
-    if(endians_need_conv)
+    if(endian_need_conv)
       exchg(ecc_buf[0], ecc_buf[1]);
-    /* eccpos это массив ecc по 3 штуки(байта) на каждые 256 байт флешки(одна страница 2048 байт дробится
-       на 8 штук по 256 байт и по ним считается ecc!). запишем выссчитанные байты ecc в нужные позиции.
-       какие именно позиции - указано в eccpos. */
-    for(e = 0; e < 3; e++){
-      res_ecc = data + oob_offset + ecc_layout.eccpos[a * 3 + e];
-      //защита от бага вылета за пределы buf
-      assert((void *)buf + buf_size > (void *)res_ecc);
-      //записываем высчитанный ранее результат
-      *res_ecc = ecc_buf[e];
-    }
+    //запишем высчитанный для блока ecc(3 байта)
+    if(!(res_buf + res_buf_size >= res_ecc + sizeof(ecc_buf))) return -1;
+    memcpy(res_ecc, ecc_buf, sizeof(ecc_buf));
+    res_ecc += sizeof(ecc_buf);
   }
+  return 0;
 }//-----------------------------------------------------------------------------------
 
 //************************************************************************************
-//выполняет заполнение tags(spare data из oob - информация используемая yaffs для идентификации чанков)
+/* выполняет копирование из ecc_buf(рассчитанный для блока data ecc)
+   и free_buf(yaffs[1,2]tags) в указанные в oob_layout-е позиции
+   !!! не делай тут assert !!! просто возвращай -1 !!!
+   ecc_buf - буфер с данными о ecc data
+   free_buf - буфер с данными о tags
+     (packed tags1 или packed tags2 или packed tags2 + tags2 ecc)
+   названия такие выбраны в созвучие с именами полей ecc_layout-а.
+*/
+int copy_data_to_oob(unsigned char *oob, int oob_size,
+                      unsigned char *ecc_buf, int ecc_len,
+                      unsigned char *free_buf, int free_len){
+  int a, x, l, len;
+  uint32_t pos;
+  unsigned char *src, *dst;
+  //копируем ecc_buf в oob[..eccpos..]
+  for(a = 0; a < ecc_layout.eccbytes; a++){
+    pos = ecc_layout.eccpos[a];
+    src = &ecc_buf[a];
+    if(!(src < ecc_buf + ecc_len)) return -1; //проверка src на вылет за границы дозволенного
+    dst = &oob[pos];
+    if(!(dst < oob + oob_size)) return -2; //проверка dst на вылет за границы дозволенного
+    //ok
+    *dst = *src;
+  }
+  //копируем free_buf в oob[..oobfree..]
+  a = 0;
+  for(x = 0; x < MTD_MAX_OOBFREE_ENTRIES; x++){
+    len = ecc_layout.oobfree[x].length;
+    if(len <= 0) break; //чуть что сразу выходим
+    for(l = 0; l < len && a < free_len; l++, a++){
+      pos = ecc_layout.oobfree[x].offset + l;
+      src = &free_buf[a];
+      if(!(src < free_buf + free_len)) return -3; //проверка src на вылет за границы дозволенного
+      dst = &oob[pos];
+      if(!(dst < oob + oob_size)) return -4; //проверка dst на вылет за границы дозволенного
+      //ok
+      *dst = *src;
+    }
+  }
+  return 0;
+}//-----------------------------------------------------------------------------------
+
+//************************************************************************************
+/* выполняет обсчет data ecc и запись free_buf + data_ecc в oob согласно ecc_layout-у
+   эта независящая от номера yaffs функция(1 или 2) так как free_buf передается нам уже
+   посчитанным(вон он как раз и зависит от номера yaffs-а) а обсчет data ecc одинаков
+   для обоих yaffs-ов.
+*/
+void calc_ecc_for_data_and_copy_all_to_oob
+(unsigned char *buf, int buf_size, int oob_offset, void *free_buf, int free_len){
+  int ret;
+  unsigned char *ecc_res_buf = NULL;
+  int ecc_res_buf_len = 0;
+  assert(buf_size > chunk_data_size);
+  //получим необходимый размер для ecc_res_buf
+  ecc_res_buf_len = calc_ecc_for_data(buf, chunk_data_size, NULL, 0);
+  assert(ecc_res_buf_len > 0);
+  //!!! до free никаких assert-ов !!!
+  ecc_res_buf = malloc(ecc_res_buf_len);
+  if(!ecc_res_buf){
+    fprintf(stderr, "Can't alloc memory for ecc_result\n");
+    exit(-1);
+  }
+  if(calc_ecc_for_data(buf, chunk_data_size, ecc_res_buf, ecc_res_buf_len) < 0){
+    fprintf(stderr, "Error calc ecc for data!\n");
+    free(ecc_res_buf);
+    exit(-1);
+  }
+  /* итак если мы здесь то успешно удалось посчитать ecc для tags и для data
+     и мы уверены, что ecc_res_buf_len == ecc_layout.eccbytes
+     (это и соразмерность data проверила ф-я calc_ecc_for_data).
+     теперь запишем то что нассчитали в oob согласно ecc_layout-у */
+  ret = copy_data_to_oob(buf + oob_offset, buf_size - oob_offset,
+                         ecc_res_buf, ecc_res_buf_len, free_buf, free_len);
+  if(ret < 0){
+    fprintf(stderr, "Error copy data to oob. ret = %d!\n", ret);
+    free(ecc_res_buf);
+    exit(-1);
+  }
+  //All ok
+  free(ecc_res_buf);
+}//-----------------------------------------------------------------------------------
+
+//************************************************************************************
+//выполняет заполнение tags2(spare data из oob - информация используемая yaffs для идентификации чанков)
 //oob_offset это смещение в buf с которого начинается oob. оно идет сразу после области данных.
-void cook_tags(char *buf, unsigned int buf_size, unsigned int oob_offset, unsigned int obj_id,
-               unsigned int seq_number, unsigned int chunk_id, unsigned int n_bytes, int extra_tags){
-  unsigned int tags_offset = oob_offset + chunk_tags_offset; //смещение от начала buf с которого начинается область tags
-  struct yaffs_packed_tags2 *pt = (void*)(buf + tags_offset); //packed tags2(tags2 + ecc)
+void cook_tags_v2(unsigned char *buf, int buf_size, int oob_offset, unsigned int obj_id,
+                  unsigned int seq_number, unsigned int chunk_id, unsigned int n_bytes, int extra_tags){
+  struct yaffs_packed_tags2 pt; //packed tags2(tags2 + ecc)
   struct yaffs_ext_tags t; //extra tags. используются для паковки в yaffs_packed_tags2
   //защита от дурака
   if(use_ecc){
-    assert(sizeof(pt) <= buf_size - tags_offset); //pt влазит в хвост buf(место для tags + tags ecc)
-    assert(chunk_oob_size <= buf_size - oob_offset); //размер области oob влазит в хвост buf(место для oob)
-  }else {
-    assert(sizeof(pt->t) <= buf_size - tags_offset); //tags2_only_tags влазит в хвост buf(место для tags)
+    assert(chunk_oob_total_size <= buf_size - oob_offset); //oob size рассчитан верно и влазит в хвост buf
+    //в хвост buf влазит pt(tags2 + tags ecc) + data ecc
+    assert(sizeof(pt) + ecc_layout.eccbytes <= buf_size - oob_offset);
+  }else{
+    assert(sizeof(pt.t) <= buf_size - oob_offset); //tags2_only_tags влазит в хвост buf(место для tags)
   }
   /* для примера смотри utils/mkyaffs2image.c->write_chunk(). она делает нечно похожее. */
   //начинаем подготовку сткрутуры yaffs_ext_tags для последующей ее упаковки в структуру yaffs_packed_tags2
-  memset(&t, 0x0, sizeof(t));
+  memset(&pt, 0xFF, sizeof(pt));
+  memset(&t, 0xFF, sizeof(t));
   //заполняем структуру yaffs_ext_tags
   t.chunk_id = chunk_id;
   t.n_bytes = n_bytes;
@@ -170,27 +266,75 @@ void cook_tags(char *buf, unsigned int buf_size, unsigned int oob_offset, unsign
     t.extra_file_size = 0; //так было во всех дампах что я анализировал
   }
   /* тут код аналогичен yaffs_pack_tags2 но для правильного обсчета tags ecc с
-     учетом разных endians пришлось сделать вот так
+     учетом разных endian пришлось сделать вот так
   */
   //пакуем. сначала tags. без ecc ! даже если use_ecc == 1 !
-  yaffs_pack_tags2_tags_only(&pt->t, &t);
+  yaffs_pack_tags2_tags_only(&(pt.t), &t);
   //сконвертируем порядок байт для tags. это крайне важно сделать ДО обсчета tags ecc!
-  convert_endians(pt, 0);
+  convert_endian_v2(&pt, 0);
   //если мы используем ecc
   if(use_ecc){
     //считаем ecc для tags
-    yaffs_ecc_calc_other((unsigned char *)&pt->t, sizeof(struct yaffs_packed_tags2_tags_only), &pt->ecc);
+    yaffs_ecc_calc_other((unsigned char *)&(pt.t), sizeof(struct yaffs_packed_tags2_tags_only), &(pt.ecc));
     //сконвертируем порядок байт для tags ecc
-    convert_endians(pt, 1);
+    convert_endian_v2(&pt, 1);
     //считаем ecc для данных
-    calc_ecc_for_data(buf, buf_size, oob_offset);
+    calc_ecc_for_data_and_copy_all_to_oob(buf, buf_size, oob_offset, (void*)&pt, sizeof(pt));
+  }else{
+    //oob тут не используется(NOR) => просто запишем pt.t линейно сразу после data
+    memcpy(buf + oob_offset, &pt.t, sizeof(pt.t));
   }
 }//-----------------------------------------------------------------------------------
 
 //************************************************************************************
+//выполняет заполнение tags1
+void cook_tags_v1(unsigned char *buf, int buf_size, int oob_offset, unsigned int obj_id,
+                  unsigned int seq_number, unsigned int chunk_id, unsigned int n_bytes, int extra_tags){
+  struct yaffs_packed_tags1 pt;
+  struct yaffs_tags *tags1 = (void*)&pt;
+  struct yaffs_ext_tags t; //extra tags. используются для паковки в yaffs_packed_tags2
+  //защита от дурака
+  if(use_ecc){
+    assert(chunk_oob_total_size <= buf_size - oob_offset); //oob size рассчитан верно и влазит в хвост buf
+    assert(sizeof(*tags1) + ecc_layout.eccbytes <= buf_size - oob_offset); //в хвост buf влазит tags1 + data ecc
+  }else {
+    assert(use_ecc == 1); //! не реализовано для yaffs1 и не ecc флешек !
+  }
+  /* для примера смотри utils/mkyaffsimage.c->write_chunk(). она делает нечно похожее. */
+  //начинаем подготовку сткрутуры yaffs_ext_tags для последующей ее упаковки в структуру yaffs_packed_tags1
+  memset(&pt, 0xFF, sizeof(pt));
+  memset(&t, 0xFF, sizeof(t));
+  //заполняем структуру yaffs_ext_tags для yaffs1
+  t.chunk_id = chunk_id;
+  t.serial_number = 1; //всегда 1 ?
+  t.n_bytes = n_bytes;
+  t.obj_id = obj_id;
+  t.is_deleted = 0;
+  //пакуем
+  yaffs_pack_tags1(&pt, &t);
+  //сконвертируем порядок байт для tags. это крайне важно сделать ДО обсчета tags ecc!
+  convert_endian_v1(&pt);
+  //если мы используем ecc
+  if(use_ecc){
+    //считаем ecc для tags
+    yaffs_calc_tags_ecc(tags1);
+    //считаем ecc для данных
+    calc_ecc_for_data_and_copy_all_to_oob(buf, buf_size, oob_offset, (void*)tags1, sizeof(*tags1));
+  }//else не реализовано !
+}//-----------------------------------------------------------------------------------
+
+/* вызов функции подготовки tags в зависимости от используемой версии yaffs */
+#define cook_tags(args...){ \
+  if(yaffs_version == 2)    \
+    cook_tags_v2(args);   \
+  if(yaffs_version == 1)  \
+    cook_tags_v1(args);   \
+}
+
+//************************************************************************************
 /* заполняет заголовок для объекта
   обязательно забей память 0xff перед вызовом этой функции! */
-void cook_object_header(char *buf, char *name){
+void cook_object_header(unsigned char *buf, char *name){
   struct yaffs_obj_hdr *oh = (struct yaffs_obj_hdr *)buf;
   struct stat *s = &kernel_file_stats;
   sswp(oh->type, YAFFS_OBJECT_TYPE_FILE);
@@ -210,7 +354,7 @@ void cook_object_header(char *buf, char *name){
 
 //************************************************************************************
 /* осуществляет заполнение заголовка для объекта(0-й чанки) и запись чанки в файл результата(r) */
-int fill_and_write_obj_header(int r, int obj_id, int seq_number, char *buf, int buf_size, int *n){
+int fill_and_write_obj_header(int r, int obj_id, int seq_number, unsigned char *buf, int buf_size, int *n){
   int len;
   int chunk_id = 0; //для obj header номер чанки == 0
   int n_bytes = 0; //для чанки содержащей заголовок объекта n_bytes всегда == 0
@@ -238,7 +382,7 @@ void do_pack(int k, int r){
   int chunk_id = 0;
   unsigned int buf_size = chunk_full_size; //для наглядности. размер буфера. он равен полному размеру чанки(data + oob) !
   unsigned int hole_fill_buf_size = chunk_full_size; //аналогично buf_size. они всегда одинаковые !
-  char *buf = NULL; //буфер в котором мы будем собирать чанку. он состоит из данных + tags(oob, metadata)
+  unsigned char *buf = NULL; //буфер в котором мы будем собирать чанку. он состоит из данных + tags(oob, metadata)
   char *hole_fill_buf = NULL; //буфер для заполнения дыр
   unsigned int hole_size; //для вымеривания дырок в конце блока
   int rlen, wrlen; //для read и write операций
@@ -345,14 +489,14 @@ void do_pack(int k, int r){
     add_ib_var(block_size); //размер блока yaffs2. он же кратен размеру образа
     add_ib_var(total_wrbc / block_size); //размер образа в блоках
     add_ib_var(chunk_data_size); //размер области полезных данных в чанке
-    add_ib_var(chunk_oob_size); //размиер области oob в чанке
+    add_ib_var(chunk_oob_total_size); //размиер области oob в чанке
     add_ib_var(chunk_full_size); //общий размер чанки(равен сумме двух предидущих полей)
     add_ib_var(chunks_per_block); //сколько чанок вмещает один блок
   }
   //выведем статистику по проделанной работе.
   printf("Successfully writed %u blocks and %u bytes\n", bc, total_wrbc);
   printf("Each block contain %u chanks + %u bytes tail hole.\n", chunks_per_block, block_size - chunks_per_block * chunk_full_size);
-  printf("Each chunk(%u bytes) consists: data part(%u bytes) + oob part(%u bytes).\n", chunk_full_size, chunk_data_size, chunk_oob_size);
+  printf("Each chunk(%u bytes) consists: data part(%u bytes) + oob part(%u bytes).\n", chunk_full_size, chunk_data_size, chunk_oob_total_size);
 end:
   //освобождаем память
   if(buf)
@@ -368,29 +512,43 @@ int calc_needed_vars(void){
   int raw_block_size = 0;
   /* размер области полезных данных чанки но без oob */
   chunk_data_size = chunk_size;
+  //для такой маленькой чанки перехордим на использование Yaffs1
+  if(chunk_size < 1024)
+    yaffs_version = 1;
+  //кол-во чанок в блоке
+  switch(chunk_size){
+    case 512:
+      chunks_per_block = 32;
+      break;
+    default:
+      chunks_per_block = 64;
+  }
   /* размер блока(в терминах yaffs2. A Group of chunks(a block is the unit of erasure). Все страницы(чанки) блока имеют одинаковый sequence number!
      все это нужно именно из за того что мы можем стирать данные только одним блоком! так что нужно знать какие чанки принадлежат этому блоку. */
-  block_size = chunk_data_size * CHUNKS_PER_BLOCK;
+  block_size = chunk_data_size * chunks_per_block;
   raw_block_size = block_size; //нужно для вывода статистики в printf
-  /* смещение tags относительно конца блока данных */
-  chunk_tags_offset = ecc_layout.oobfree[0].offset;
   /* размер всей чанки (данные чанки + oobfree->offset + tags + if(use_ecc){ tags ecc + data ecc }). */
   chunk_full_size = chunk_data_size;
   if(use_ecc){ //если используется ECC
+    chunk_oob_free_size = get_oobfree_len(ecc_layout.oobfree); //получим суммарную длину oobfree
     //защита от дурака(эта структура обязана влазить в oobfree.length !)
-    assert(sizeof(struct yaffs_packed_tags2) <= ecc_layout.oobfree[0].length);
+    if(yaffs_version == 1)
+      assert(sizeof(struct yaffs_tags) <= chunk_oob_free_size);
+    if(yaffs_version == 2)
+      assert(sizeof(struct yaffs_packed_tags2) <= chunk_oob_free_size);
     //размер всей oob области чанки
-    chunk_oob_size = ecc_layout.oobfree[0].offset + ecc_layout.oobfree[0].length + ecc_layout.eccbytes;
+    chunk_oob_total_size = get_ecc_layout_max_offset(&ecc_layout) + 1; //так как offset там начиная с 0
+    assert(chunk_oob_free_size + ecc_layout.eccbytes <= chunk_oob_total_size);
     //учитываем в полном размере чанки еще и размер oob!
-    chunk_full_size += chunk_oob_size;
+    chunk_full_size += chunk_oob_total_size;
     //учитываем в размере блока еще и размер oob!
-    block_size += chunk_oob_size * CHUNKS_PER_BLOCK;
+    block_size += chunk_oob_total_size * chunks_per_block;
   }else{ //ECC не используется. это скорей всего NOR флешка. у нее размер oob == 16 байт(размер tags2 структуры но без tags ecc)
     //размер всей oob области == размеру структуры tags2_tags_only! БеЗ { tags ecc и data ecc } !
-    chunk_oob_size = sizeof(struct yaffs_packed_tags2_tags_only);
-    chunk_full_size += chunk_oob_size;
+    chunk_oob_total_size = sizeof(struct yaffs_packed_tags2_tags_only);
+    chunk_full_size += chunk_oob_total_size;
   }
-  //кол-во чанок в блоке
+  //кол-во чанок в блоке. уточнение верхнего значения с учетом вновь выссчитанных данных(это важно для NOR-а!)
   chunks_per_block = block_size / chunk_full_size;
   /* размер info блока. он равен размеру блока yaffs2 и за вычетом переданного нам в параметрах align_size. align_size нужен для
      openwrt-шного скрипта sysupgrade чтобы указать dd смещение в блоках(размера block_size) от начала sysupgrade.bin */
@@ -405,11 +563,18 @@ int calc_needed_vars(void){
   }else{
     info_block_size = 0;
   }
+  //последние проверки
+  assert(chunk_oob_free_size <= chunk_oob_total_size);
   //выведем то что мы посчитали
-  verb_printf("YAFFS2 parameters vars:\n");
+  verb_printf("YAFFS%d parameters vars:\n", yaffs_version);
   verb_printf("  chunk_data_size := %u\n", chunk_data_size);
   verb_printf("  chunk_full_size := %u\n", chunk_full_size);
-  verb_printf("  chunk_oob_size := %u\n", chunk_oob_size);
+  verb_printf("  chunk_oob_total_size := %u\n", chunk_oob_total_size);
+  verb_printf("  chunk_oob_free_size := %u\n", chunk_oob_free_size);
+  verb_printf("  ecc_layout.eccbytes := %u\n", ecc_layout.eccbytes);
+  //если ДЫРЫ в ecc layout-е
+  if(chunk_oob_free_size + ecc_layout.eccbytes != chunk_oob_total_size)
+    verb_printf("  ecc_layout HOLES := %u\n", chunk_oob_total_size - (chunk_oob_free_size + ecc_layout.eccbytes));
   verb_printf("  block_size := %u(%u + %u)\n", block_size, raw_block_size, block_size - raw_block_size);
   verb_printf("  chunks_per_block := %u\n", chunks_per_block);
   verb_printf("\n");
@@ -427,7 +592,7 @@ int main(int argc, char *argv[]){
       case 'k': snprintf(kernel_file, sizeof(kernel_file) - 1, "%s", optarg); break;
       case 'r': snprintf(res_file, sizeof(res_file) - 1, "%s", optarg); break;
       case 'c': use_ecc = 1; break;
-      case 'e': endians_need_conv = 1; break;
+      case 'e': endian_need_conv = 1; break;
       case 's': chunk_size = atoi(optarg); break;
       case 'i': add_image_info_block = 1; info_block_size = atoi(optarg); break;
       case 'p': strncpy(platform_name, optarg, sizeof(platform_name)); break;
