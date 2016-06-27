@@ -53,6 +53,7 @@ int use_ecc = 0; //используется ли ECC(если нет ecc то н
 int verbose = 0; //говорливость в stdout
 //добавить к образу блок с данными описывающими его параметры(размер, blocksize, chunksize, etc...)
 int add_image_info_block = 0; //это нужно для образов используемых перепрошивальщиком openwrt(для nand флешей)
+int align_size = 0; //нужно для openwrt-шного sysupgrade-а. размер блока который будет добавлен к нам сторонним скриптом(sysupgrade-ом)
 
 //параметры для создаваемой нами файловой системы yaffs2. рассчитываются ф-ей calc_needed_vars.
 static int chunk_data_size = 0;
@@ -70,7 +71,7 @@ void print_help(void){
   char info_block_size_str[30];
   char platform_name_str[sizeof(platform_name) + 10] = "UNDEFINED";
   snprintf(chunk_size_str, sizeof(chunk_size_str) - 1, "%u", chunk_size);
-  snprintf(info_block_size_str, sizeof(info_block_size_str) - 1, "Yes (align size := %u)", info_block_size);
+  snprintf(info_block_size_str, sizeof(info_block_size_str) - 1, "Yes (align size := %u)", align_size);
   if(platform_name[0]) snprintf(platform_name_str, sizeof(platform_name_str) - 1, "%s", platform_name);
   char *usage[] =
     { "-k", "Path to kernel file", kernel_file,
@@ -492,6 +493,7 @@ void do_pack(int k, int r){
     add_ib_var(chunk_oob_total_size); //размиер области oob в чанке
     add_ib_var(chunk_full_size); //общий размер чанки(равен сумме двух предидущих полей)
     add_ib_var(chunks_per_block); //сколько чанок вмещает один блок
+    add_ib_var(align_size); //размер align_size(обычно 65536 или 0)
   }
   //выведем статистику по проделанной работе.
   printf("Successfully writed %u blocks and %u bytes\n", bc, total_wrbc);
@@ -550,18 +552,17 @@ int calc_needed_vars(void){
   }
   //кол-во чанок в блоке. уточнение верхнего значения с учетом вновь выссчитанных данных(это важно для NOR-а!)
   chunks_per_block = block_size / chunk_full_size;
-  /* размер info блока. он равен размеру блока yaffs2 и за вычетом переданного нам в параметрах align_size. align_size нужен для
-     openwrt-шного скрипта sysupgrade чтобы указать dd смещение в блоках(размера block_size) от начала sysupgrade.bin */
+  /* размер info блока. ! его размер + переданный нам align_size должны быть кратны block_size !
+     align_size нужен для openwrt-шного sysupgrade скрипта(он добавит к нашему образу еще свой
+     заголовок размером align_size) чтобы указать dd смещение в блоках от начала sysupgrade.bin
+       [...sysupgrade header(size = align_size = 65536)...][...info block(size = block_size - info_block_size)...]
+       [< < < < < < < <   sizeof(sysupgrade header) + sizeof(info_block header) == block_size   > > > > > > > > >]
+  */
   if(add_image_info_block){
-    info_block_size = block_size - info_block_size;
-    if(info_block_size < 0) info_block_size  *= -1;
-    //случа когда значение выравнивания превышает размер нашего блока(это ошибка пользователя! такого не должно быть!)
-    if(info_block_size < 0 || info_block_size < 1024){
-      fprintf(stderr, "WARNING: info_block align value(%d) is out of range. Must be %d..%d.\n", 
-              info_block_size, 0, block_size - 1024);
-      info_block_size = 0;
-      return 1;
-    }
+    info_block_size = (align_size + 1024) / block_size;
+    info_block_size += 1;
+    info_block_size *= block_size;
+    info_block_size -= align_size;
   }else{
     info_block_size = 0;
   }
@@ -596,7 +597,7 @@ int main(int argc, char *argv[]){
       case 'c': use_ecc = 1; break;
       case 'e': endian_need_conv = 1; break;
       case 's': chunk_size = atoi(optarg); break;
-      case 'i': add_image_info_block = 1; info_block_size = atoi(optarg); break;
+      case 'i': add_image_info_block = 1; align_size = atoi(optarg); break;
       case 'p': strncpy(platform_name, optarg, sizeof(platform_name)); break;
       case 'v': verbose = 1; break;
       case 'h': print_help(); exit(0); break;

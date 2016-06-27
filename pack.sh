@@ -16,5 +16,5 @@ RESNAME=$(basename $KERNEL | sed -e 's/\..\+//')
 #./kernel2minor -k $KERNEL -r ./$RESNAME.nand-tik-yaffs2-2048b-ecc.bin -s 2048 -p NND02048 -c
 
 #for NAND-512(old rb4xx)
-./kernel2minor -k $KERNEL -r ./$RESNAME.nand-tik-yaffs1-512b-ecc.bin -s 512 -i $CI_BLKSZ -p NND00512 -c -v
+./kernel2minor -k $KERNEL -r ./$RESNAME.nand-tik-yaffs1-512b-ecc.bin -s 512 -i $CI_BLKSZ -p NND00512 -c
 #./kernel2minor -k $KERNEL -r ./$RESNAME.nand-tik-yaffs1-512b-ecc.bin -s 512 -p NND00512 -c
