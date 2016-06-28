@@ -7,17 +7,23 @@ This program packs OpenWrt Linux Kernel to Mikrotik's version of yaffs2 file sys
 So you do not need to include yaffs2 support in the linux kernel any more.
 
 Currently supported flashes are:
-  NOR flash:
+  NOR flash(yaffs2 without ecc):
     Mikrotik rb941-2nd(hAP lite)
     And maby(not tested yet) all new routerboards with this strings in description:
       Storage type     FLASH
       Storage size     16 MB
-  NAND flash:
+  NAND flash(yaffs2 with ecc):
     Mikrotik rb750 and rb751
     And maby(not tested yet) all routerboards with NAND flash parameters like this:
       Eraseblock size:                131072 bytes, 128.0 KiB
       Minimum input/output unit size: 2048 bytes
       OOB size:                       64 bytes
+  NAND flash(yaffs1 mode):
+    Mikrotik rb4xx
+    And maby(not tested yet) all routerboards with NAND flash parameters like this:
+      Eraseblock size:                16384 bytes, 16.0 KiB
+      Minimum input/output unit size: 512 bytes
+      OOB size:                       16 bytes
 
 You can write ready image in the following way:
   NOR flash:
