@@ -1,78 +1,71 @@
-From b29ac09c27d595b0792f81d43d216962b0a5dd44 Mon Sep 17 00:00:00 2001
-From: Sergey Sergeev <adron@yapic.net>
-Date: Tue, 28 Jun 2016 14:55:12 +0300
-Subject: [PATCH] tools: add kernel2minor utility for Mikrotik devices
+commit 7a2104a82053a53e4891f06a47068f6a90a68340
+Author: Sergey Sergeev <adron@yapic.net>
+Date:   Tue Jun 28 14:55:12 2016 +0300
 
-This patch adds support of Mikrotik yaffs2 filesystem image for kernel file
-and tools/kernel2minor package.
-We neede this to boot kernel through RouterBoot on new Mikrotik NOR flash devices.
-
-Signed-off-by: Sergey Sergeev <adron@yapic.net>
----
- scripts/target-metadata.pl             |  1 +
- target/Config.in                       |  3 +++
- target/linux/ar71xx/mikrotik/target.mk |  4 ++--
- tools/Makefile                         |  1 +
- tools/kernel2minor/Makefile            | 35 ++++++++++++++++++++++++++++++++++
- 5 files changed, 42 insertions(+), 2 deletions(-)
- create mode 100644 tools/kernel2minor/Makefile
+    tools: add kernel2minor utility for Mikrotik devices
+    
+    This patch adds support of Mikrotik yaffs2 filesystem image for kernel file
+    and tools/kernel2minor package.
+    We neede this to boot kernel through RouterBoot on new Mikrotik NOR flash devices.
+    
+    Signed-off-by: Sergey Sergeev <adron@yapic.net>
 
 diff --git a/scripts/target-metadata.pl b/scripts/target-metadata.pl
-index ea6462c..227bc89 100755
+index ea6462c..ca9940e 100755
 --- a/scripts/target-metadata.pl
 +++ b/scripts/target-metadata.pl
 @@ -27,6 +27,7 @@ sub target_config_features(@) {
  		/ext4/ and $ret .= "\tselect USES_EXT4\n";
  		/targz/ and $ret .= "\tselect USES_TARGZ\n";
  		/cpiogz/ and $ret .= "\tselect USES_CPIOGZ\n";
-+		/kernel2mikrotikyaffs2/ and $ret .= "\tselect USES_KERNEL2MIKROTIKYAFFS2\n";
++		/minor/ and $ret .= "\tselect USES_MINOR\n";
  		/ubifs/ and $ret .= "\tselect USES_UBIFS\n";
  		/fpu/ and $ret .= "\tselect HAS_FPU\n";
  		/spe_fpu/ and $ret .= "\tselect HAS_SPE_FPU\n";
 diff --git a/target/Config.in b/target/Config.in
-index 843fbee..88fcd3c 100644
+index 843fbee..6a29d53 100644
 --- a/target/Config.in
 +++ b/target/Config.in
 @@ -63,6 +63,9 @@ config USES_TARGZ
  config USES_CPIOGZ
  	bool
  
-+config USES_KERNEL2MIKROTIKYAFFS2
++config USES_MINOR
 +	bool
 +
  config USES_UBIFS
  	bool
  	select NAND_SUPPORT
 diff --git a/target/linux/ar71xx/mikrotik/target.mk b/target/linux/ar71xx/mikrotik/target.mk
-index b2fb0df..50a2903 100644
+index b2fb0df..cb2447a 100644
 --- a/target/linux/ar71xx/mikrotik/target.mk
 +++ b/target/linux/ar71xx/mikrotik/target.mk
 @@ -1,5 +1,5 @@
 -BOARDNAME:=Mikrotik devices with NAND flash
 -FEATURES += targz ramdisk
 +BOARDNAME:=Mikrotik devices with NAND/NOR flash
-+FEATURES += targz ramdisk kernel2mikrotikyaffs2
++FEATURES += targz ramdisk minor
  
  define Target/Description
  	Build firmware images for Atheros AR71xx/AR913x based Mikrotik boards.
 diff --git a/tools/Makefile b/tools/Makefile
-index c3476cf..cf237ac 100644
+index c3476cf..179306d 100644
 --- a/tools/Makefile
 +++ b/tools/Makefile
 @@ -38,6 +38,7 @@ tools-$(CONFIG_TARGET_x86) += qemu
  tools-$(CONFIG_TARGET_mxs) += elftosb sdimage
  tools-$(CONFIG_TARGET_brcm2708)$(CONFIG_TARGET_sunxi)$(CONFIG_TARGET_mxs)$(CONFIG_TARGET_omap) += mtools dosfstools
  tools-$(CONFIG_TARGET_ar71xx) += lzma-old squashfs
-+tools-$(CONFIG_USES_KERNEL2MIKROTIKYAFFS2) += kernel2minor
++tools-$(CONFIG_USES_MINOR) += kernel2minor
  tools-y += lzma squashfs4
  tools-$(BUILD_B43_TOOLS) += b43-tools
  tools-$(BUILD_PPL_CLOOG) += ppl cloog
 diff --git a/tools/kernel2minor/Makefile b/tools/kernel2minor/Makefile
 new file mode 100644
-index 0000000..b7ab531
+index 0000000..0db9959
 --- /dev/null
 +++ b/tools/kernel2minor/Makefile
-@@ -0,0 +1,35 @@
+@@ -0,0 +1,31 @@
 +#
 +# Copyright (C) 2016 adron@yapic.net
 +#
@@ -95,10 +88,6 @@ index 0000000..b7ab531
 +
 +include $(INCLUDE_DIR)/host-build.mk
 +
-+define Host/Compile
-+	$(MAKE) -C $(HOST_BUILD_DIR)
-+endef
-+
 +define Host/Install
 +	$(INSTALL_BIN) $(HOST_BUILD_DIR)/kernel2minor $(STAGING_DIR_HOST)/bin/
 +endef
@@ -108,6 +97,3 @@ index 0000000..b7ab531
 +endef
 +
 +$(eval $(call HostBuild))
--- 
-1.9.1
-
