@@ -30,6 +30,8 @@
 
 //#include "tests/dumpers.h"
 
+//флаг необходимости конвертации порядка байт в big endian
+int to_big_endian = 0;
 //размер блока с инфо данными о созданном образе. рассчитывается в calc_needed_vars
 static int info_block_size = 0;
 //длина строки переменной инфо блока(без '\0'. он там не используется)
@@ -76,7 +78,7 @@ void print_help(void){
   char *usage[] =
     { "-k", "Path to kernel file", kernel_file,
       "-r", "Path to result file", res_file,
-      "-e", "Enable endian convert", endian_need_conv ? "Yes" : "No",
+      "-e", "Convert byte order to big-endian", to_big_endian ? "Yes" : "No",
       "-c", "Use ECC", use_ecc ? "Yes" : "No",
       "-s", "FLASH Unit(Chunk) size", chunk_size_str,
       "-i", "Add image info block", add_image_info_block ? info_block_size_str : "No",
@@ -85,7 +87,7 @@ void print_help(void){
       "-h", "Show help and exit", "" };
   printf("Version := %s\nUsage:\n", PROGRAM_VERSION);
   for(a = 0; a < sizeof(usage) / sizeof(usage[0]); a += 3){
-    printf("  %-5s%-25s%s\n", usage[a], usage[a + 1], usage[a + 2]);
+    printf("  %-5s%-40s%s\n", usage[a], usage[a + 1], usage[a + 2]);
   }
 }//-----------------------------------------------------------------------------------
 
@@ -595,7 +597,7 @@ int main(int argc, char *argv[]){
       case 'k': snprintf(kernel_file, sizeof(kernel_file) - 1, "%s", optarg); break;
       case 'r': snprintf(res_file, sizeof(res_file) - 1, "%s", optarg); break;
       case 'c': use_ecc = 1; break;
-      case 'e': endian_need_conv = 1; break;
+      case 'e': to_big_endian = 1; break;
       case 's': chunk_size = atoi(optarg); break;
       case 'i': add_image_info_block = 1; align_size = atoi(optarg); break;
       case 'p': strncpy(platform_name, optarg, sizeof(platform_name)); break;
@@ -622,7 +624,7 @@ int main(int argc, char *argv[]){
     perror("Can't open kernel file");
     exit(-1);
   }
-  r = creat(res_file, 0);
+  r = open(res_file, O_CREAT | O_TRUNC | O_WRONLY, 0644);
   if(r <= 0){
     perror("Can't create result file");
     close(k);

@@ -109,6 +109,8 @@ int main(void){
   int chunkInNAND;
   char *x;
   printf("pt size = %lu\n", ((void*)&pt->should_be_ff) - ((void*)pt));
+  //!!! конвертация в big endian !!! ЭТО ОЧЕНЬВАЖНЫЙ ФЛАГ !!! без него будет полный бред для big endian образов!
+  to_big_endian = 1;
   data = malloc(100 * 1024 * 1024);
   if(!data){
     printf("Can't malloc memory!\n");
@@ -118,9 +120,11 @@ int main(void){
 //  fd = open("./kernel_nand.bin", O_RDONLY);
   //fd = open("./qqq-nand1.bin", O_RDONLY);
 //  fd = open("/tmp/rrr/x2.bin", O_RDONLY);
+//  fd = open("/tmp/rrr/kernel", O_RDONLY);
 //  fd = open("/tmp/rrr/kernel-ok", O_RDONLY);
 //  fd = open("/tmp/rrr/old-work", O_RDONLY);
-  fd = open("/home/prog/openwrt/ziggi2/xm.nand-tik-yaffs1-512b-ecc.bin", O_RDONLY);
+  fd = open("/home/prog/openwrt/kernel2minor/xm.nand-tik-yaffs1-512b-ecc.bin", O_RDONLY);
+//  fd = open("/home/prog/openwrt/pred-k2m/xm.nand-tik-yaffs1-512b-ecc.bin", O_RDONLY);
   if(fd < 0){
     printf("Can't open file!\n");
     exit(-1);

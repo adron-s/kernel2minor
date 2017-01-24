@@ -9,8 +9,14 @@
                           библиотека бинарных операций
 */
 
-//нужна ли конвертация. устанавливавется автоматически в 1 для НЕ big_endian систем
-static int endian_need_conv = __BYTE_ORDER__ != __ORDER_BIG_ENDIAN__;
+//флаг необходимости конвертации порядка байт в big endian
+extern int to_big_endian;
+/* нужна ли конвертация в big endian byte order:
+    we are BIG_ENDIAN system and flag IS_SET := 0
+    we are BIG_ENDIAN system and flag not_set := 1
+    we are LITTLE_ENDIAN system and flag IS_SET := 1
+    we are LITTLE_ENDIAN system and flag not_set := 0 */
+#define endian_need_conv (!!to_big_endian ^ (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__))
 
 /* конвертор из одного байтового порядка в обратный
    x обязательно должна быть переменной но не выражением !

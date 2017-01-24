@@ -104,6 +104,8 @@ int main(void){
   int chunkInNAND;
   char *x;
   printf("pt size = %lu\n", sizeof(*pt));
+  //!!! конвертация в big endian !!! ЭТО ОЧЕНЬВАЖНЫЙ ФЛАГ !!! без него будет полный бред для big endian образов!
+  to_big_endian = 1;
   data = malloc(32 * 1024 * 1024);
   if(!data){
     printf("Can't malloc memory!\n");
