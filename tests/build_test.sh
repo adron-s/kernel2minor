@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 #определим путь до директории с kernel2minor/tests
 workdir=$(dirname $(ls -l ./${0} | sed -e 's/^.\+-> //'))

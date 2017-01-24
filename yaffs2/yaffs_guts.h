@@ -17,8 +17,9 @@
 #define __YAFFS_GUTS_H__
 
 #include "yportenv.h"
+#include <stdint.h>
 
-typedef __loff_t loff_t;
+typedef int64_t loff_t;
 
 #define YAFFS_OK	1
 #define YAFFS_FAIL  0

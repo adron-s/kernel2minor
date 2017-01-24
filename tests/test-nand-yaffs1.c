@@ -116,7 +116,11 @@ int main(void){
   }
   //fd = open("/home/prog/openwrt/work/rb941-2nd-mtd-dump/mtdblock2.bin", O_RDONLY);
 //  fd = open("./kernel_nand.bin", O_RDONLY);
-  fd = open("./qqq-nand1.bin", O_RDONLY);
+  //fd = open("./qqq-nand1.bin", O_RDONLY);
+//  fd = open("/tmp/rrr/x2.bin", O_RDONLY);
+//  fd = open("/tmp/rrr/kernel-ok", O_RDONLY);
+//  fd = open("/tmp/rrr/old-work", O_RDONLY);
+  fd = open("/home/prog/openwrt/ziggi2/xm.nand-tik-yaffs1-512b-ecc.bin", O_RDONLY);
   if(fd < 0){
     printf("Can't open file!\n");
     exit(-1);
@@ -127,6 +131,7 @@ int main(void){
     chunk += size;
   }
   close(fd);
+  fd = creat("./unpacke-data.bin", O_WRONLY);
   //рассчет будет меньше если чанки не полностью заполняют все блоки! то есть если последний блок обрезан!
   printf("%u\n", total_size);
   total_chunks = total_size / sectorsize * chunks_per_block;
@@ -155,6 +160,7 @@ int main(void){
     yaffs_unpack_tags1(&t, pt);
     //считаем ecc для данных
     data_ecc_result = check_ecc_data(chunk, total_bytes_per_chunk);
+    write(fd, chunk, t.n_bytes); //write unpacked-data.bin
     //printf("chunk_id = %d\n", pt->chunk_id);
     printf("%u, %u: obj_id = %u, chunk_id = %u, n_bytes = %u, serial_num = %d, ecc = 0x%x(%s), ecc_data = %s, is_deleted = %u, chunk_used = %u\n",
            chunkInNAND, addr, t.obj_id, t.chunk_id, t.n_bytes, t.serial_number,
@@ -166,6 +172,7 @@ int main(void){
     //goto end; //!!!
   } 
 end:
+  close(fd);
   free(data);
   return 0;
 }

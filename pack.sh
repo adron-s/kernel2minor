@@ -2,7 +2,7 @@
 #align. It's important for openwrt's combined image.
 CI_BLKSZ=65536
 
-KERNEL="/home/prog/openwrt/openwrt-all/bin/ar71xx/openwrt-ar71xx-mikrotik-vmlinux-lzma.elf"
+KERNEL="./xm.elf"
 #KERNEL="/home/prog/openwrt/trunk-rb941-2nd/bin/ar71xx/openwrt-ar71xx-mikrotik-vmlinux-lzma.elf"
 
 RESNAME=$(basename $KERNEL | sed -e 's/\..\+//')
@@ -16,5 +16,6 @@ RESNAME=$(basename $KERNEL | sed -e 's/\..\+//')
 #./kernel2minor -k $KERNEL -r ./$RESNAME.nand-tik-yaffs2-2048b-ecc.bin -s 2048 -p NND02048 -c
 
 #for NAND-512(old rb4xx)
-./kernel2minor -k $KERNEL -r ./$RESNAME.nand-tik-yaffs1-512b-ecc.bin -s 512 -i $CI_BLKSZ -p NND00512 -c
+#./kernel2minor -k $KERNEL -r ./$RESNAME.nand-tik-yaffs1-512b-ecc.bin -s 512 -i $CI_BLKSZ -p NND00512 -c
+./kernel2minor -k $KERNEL -r ./$RESNAME.nand-tik-yaffs1-512b-ecc.bin -s 512 -e -c
 #./kernel2minor -k $KERNEL -r ./$RESNAME.nand-tik-yaffs1-512b-ecc.bin -s 512 -p NND00512 -c
