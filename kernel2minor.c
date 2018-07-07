@@ -344,12 +344,12 @@ void cook_object_header(unsigned char *buf, char *name){
   sswp(oh->parent_obj_id, YAFFS_OBJECTID_ROOT);
   memset(oh->name, 0, sizeof(oh->name));
   strncpy(oh->name, name, YAFFS_MAX_NAME_LENGTH);
-  sswp(oh->yst_mode, s->st_mode);
-  sswp(oh->yst_uid, s->st_uid);
-  sswp(oh->yst_gid, s->st_gid);
-  sswp(oh->yst_atime, s->st_atime);
-  sswp(oh->yst_mtime, s->st_mtime);
-  sswp(oh->yst_ctime, s->st_ctime);
+  sswp(oh->yst_mode, 0100644);
+  sswp(oh->yst_uid, 0);
+  sswp(oh->yst_gid, 0);
+  sswp(oh->yst_atime, 0);
+  sswp(oh->yst_mtime, 0);
+  sswp(oh->yst_ctime, 0);
   sswp(oh->yst_rdev, s->st_rdev);
   sswp(oh->file_size_low , s->st_size);
   sswp(oh->file_size_high, s->st_size >> 32);
