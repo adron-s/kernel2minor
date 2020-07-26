@@ -590,12 +590,25 @@ int calc_needed_vars(void){
 int main(int argc, char *argv[]){
   int k = 0;
   int r = 0;
+  int res = 0;
   int ch; //для парсинга параметров
   //загружаем параметры командной строки
   while( (ch = getopt(argc, argv, "k:r:s:i:p:cevh")) != -1){
     switch(ch){
-      case 'k': snprintf(kernel_file, sizeof(kernel_file) - 1, "%s", optarg); break;
-      case 'r': snprintf(res_file, sizeof(res_file) - 1, "%s", optarg); break;
+      case 'k':
+        res = snprintf(kernel_file, sizeof(kernel_file) - 1, "%s", optarg);
+        if(res >= sizeof(kernel_file) - 1){
+          fprintf(stderr, "kernel file name is longer than compile time limit of %li chars.\n", sizeof(kernel_file) - 1);
+          exit(1);
+        }
+        break;
+      case 'r':
+        res = snprintf(res_file, sizeof(res_file) - 1, "%s", optarg);
+        if(res >= sizeof(res_file) - 1){
+          fprintf(stderr, "result file name is longer than compile time limit of %li chars.\n", sizeof(res_file) - 1);
+          exit(1);
+        }
+        break;
       case 'c': use_ecc = 1; break;
       case 'e': to_big_endian = 1; break;
       case 's': chunk_size = atoi(optarg); break;
