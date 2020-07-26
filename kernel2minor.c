@@ -343,7 +343,7 @@ void cook_object_header(unsigned char *buf, char *name){
   sswp(oh->type, YAFFS_OBJECT_TYPE_FILE);
   sswp(oh->parent_obj_id, YAFFS_OBJECTID_ROOT);
   memset(oh->name, 0, sizeof(oh->name));
-  strncpy(oh->name, name, YAFFS_MAX_NAME_LENGTH);
+  strcpy_safe(oh->name, name);
   sswp(oh->yst_mode, 0100644);
   sswp(oh->yst_uid, 0);
   sswp(oh->yst_gid, 0);
@@ -482,10 +482,10 @@ void do_pack(int k, int r){
   //заполним инфо блок
   if(add_image_info_block){
     //magic. чтобы отличать наш образ от других!
-    strncpy(ib_var_tmp_buf, "MIKROTIK", sizeof(ib_var_tmp_buf));
+    strcpy_safe(ib_var_tmp_buf, "MIKROTIK");
     add_ib_var(0, 1); //слово MIKROTIK как флаг обозначающий что это инфоблок порожденный этой программой
     //имя платформы: NOR, NAND, etc...
-    strncpy(ib_var_tmp_buf, platform_name, sizeof(ib_var_tmp_buf));
+    strcpy_safe(ib_var_tmp_buf, platform_name);
     add_ib_var(0, 1);
     add_ib_var(info_block_size); //размер info блока
     add_ib_var(total_wrbc); //полный размер образа(без учета info блока)
@@ -613,7 +613,7 @@ int main(int argc, char *argv[]){
       case 'e': to_big_endian = 1; break;
       case 's': chunk_size = atoi(optarg); break;
       case 'i': add_image_info_block = 1; align_size = atoi(optarg); break;
-      case 'p': strncpy(platform_name, optarg, sizeof(platform_name)); break;
+      case 'p': strcpy_safe(platform_name, optarg); break;
       case 'v': verbose = 1; break;
       case 'h': print_help(); exit(0); break;
     }

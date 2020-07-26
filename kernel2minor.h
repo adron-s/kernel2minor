@@ -1,7 +1,7 @@
 #ifndef __KERNEL2MINOR_H__
 #define __KERNEL2MINOR_H__
 
-#define PROGRAM_VERSION "0.22"
+#define PROGRAM_VERSION "0.26"
 
 //печать сообщения только в случае активности флага verbose
 #define verb_printf(args...) ({ if(verbose) printf(args); })
@@ -26,5 +26,11 @@
   }
 #define _add_ib_var(val, maxlen, skip_snprintf) __add_ib_var(val, maxlen, skip_snprintf);
 #define add_ib_var(val, tail...) _add_ib_var(val, INFO_BLOCK_VAR_LEN, (#tail[0] != '\0'));
+
+//safe copy string s -> d
+#define strcpy_safe(d, s){			\
+	strncpy(d, s, sizeof(d) - 1);	\
+	d[sizeof(d) - 1] = '\0';			\
+}
 
 #endif /* __KERNEL2MINOR_H__ */
