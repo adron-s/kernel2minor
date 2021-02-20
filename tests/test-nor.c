@@ -34,6 +34,8 @@
 #include "yaffs_guts.h"
 #include "yaffs_packedtags2.h"
 
+int to_big_endian = 1;
+
 void pt_endianes_fix(struct yaffs_packed_tags2_tags_only *pt){
   pt->seq_number = SWAP32(pt->seq_number);
   pt->obj_id = SWAP32(pt->obj_id);
@@ -76,7 +78,7 @@ void print_extra(struct yaffs_ext_tags *t){
 }
 
 int main(void){
-  int fd;
+  int fd, fd2;
   char *data;
   char *chunk;
   unsigned int total_size = 0;
@@ -97,7 +99,10 @@ int main(void){
   }
   //fd = open("/home/prog/openwrt/work/rb941-2nd-mtd-dump/mtdblock2.bin", O_RDONLY);
   //fd = open("./qqq.bin", O_RDONLY);
-  fd = open("./qqq-nor.bin", O_RDONLY);
+  //fd = open("../xm.nor-tik-yaffs2.bin", O_RDONLY);
+  fd2 = open("/tmp/234/owl5_res.bin", O_WRONLY | O_CREAT);
+//  fd = open("/tmp/234/owl2.bin", O_RDONLY);
+ fd = open("/tmp/234/owl5.bin", O_RDONLY);
   if(fd < 0){
     printf("Can't open file!\n");
     exit(-1);
@@ -126,13 +131,20 @@ int main(void){
     //распакуем. распаковка нужна так как могут быть дополнительные(extra) tags! запакованные в месте с нашими 4-мя полями(seq_number, ...)!
     memset(&t, 0x0, sizeof(t));
     yaffs_unpack_tags2_tags_only(&t, pt);
-    printf("%u, %u: seq_number = %u, obj_id = %u, chunk_id = %u, n_bytes = %u, extra_available = %u\n", 
-           chunkInNAND, addr, t.seq_number, t.obj_id,
+   // if(t.extra_available)
+    //	continue;
+    printf("%u, 0x%04X, %u: seq_number = %u, obj_id = %u, chunk_id = %u, n_bytes = %u, extra_available = %u\n", 
+           chunkInNAND, addr, addr, t.seq_number, t.obj_id,
            t.chunk_id, t.n_bytes, t.extra_available);
     if(t.extra_available){
       print_extra(&t);
+    }else{
+    	if(t.n_bytes > 0 && t.obj_id == 260){
+    		write(fd2, chunk, t.n_bytes);
+    	}
     }
   }
+  close(fd2);
 end:
   free(data);
   return 0;
